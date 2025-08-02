@@ -22,3 +22,8 @@ moveDownKey := "End"
 moveLeftKey := "Del"
 moveRightKey := "PgDn"
 alt + F5: toggle keyboard control 
+
+- appShortCut.ahk: a hot key to provide quick access to applications
+add program to the menu via config file
+control:
+ctrl + F7: toggle quick access menu
