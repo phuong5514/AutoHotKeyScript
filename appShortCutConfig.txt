@@ -6,6 +6,9 @@
 
 notepad=notepad
 vsCode=C:\Users\LENOVO\AppData\Local\Programs\Microsoft VS Code\Code.exe
-obs=D:\Installed_apps\steam\steamapps\common\OBS Studio\bin\64bit\obs64.exe
+obs=steam://rungameid/1905180
+fileExplorer=explorer.exe
+mail=https://outlook.office365.com/mail/
+zalo=C:\Users\LENOVO\AppData\Local\Programs\Zalo\Zalo.exe
 *
 

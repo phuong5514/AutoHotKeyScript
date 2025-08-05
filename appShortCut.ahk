@@ -4,8 +4,13 @@ global apps := Map()
 global configFileName := "appShortCutConfig.txt"
 
 ; Appearance
-backgroundColor := "Black"
-fontSettings := "s14 cWhite"
+; backgroundColor := "Black"
+; fontSettings := "s14 cWhite"
+; prefferedFont := "Segoe UI"
+
+backgroundColor := "242323"
+textColor := "f9f9f9"
+fontSettings := "s10 c000000"
 prefferedFont := "Segoe UI"
 
 ; Menu UI
@@ -13,6 +18,8 @@ global uiOn := false
 shortcutList := Gui("+AlwaysOnTop -Caption +ToolWindow +Border")
 shortcutList.BackColor := backgroundColor
 shortcutList.SetFont(fontSettings, prefferedFont)
+shortcutList.MarginX := 0
+shortcutList.MarginY := 0
 
 ; bindings
 global bindings := Map(
@@ -108,6 +115,14 @@ CreateConfigFile() {
     }
 }
 
+Execute(path) {
+    try {
+        Run (path)
+    } catch {
+        MsgBox("File does not exist! Please check if the path in the configfile is an exe file, a shortcut/link to an exe file, a system programs e.g notepad")
+    }
+}
+
 ; Flow
 
 ; Read Configuration
@@ -115,12 +130,18 @@ ReadConfiguration()
 
 ; Register UI
 for app_name, path in apps {
-    button := shortcutList.AddButton("w200", app_name)
+    bColor := "background" backgroundColor
+    tColor := "c" textColor
+    button := shortcutList.AddButton("w200 " bColor " +0x0100 h30 +BackgroundTrans" , "  " app_name) ; BS_LEFT
+    button.SetFont(fontSettings, prefferedFont)
+
     button.path_to_program := path    
-    button.OnEvent("Click", (ctrl, *) => Run(ctrl.path_to_program))
+    button.OnEvent("Click", (ctrl, *) => Execute(ctrl.path_to_program))
 }
 
 ; bind hotkeys
 for name, function in bindingFunctions {
     Hotkey(bindings[name], function)
 }
+
+shortcutList.OnEvent("Escape", (*) => HideUI())
