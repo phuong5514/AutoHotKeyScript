@@ -3,6 +3,10 @@
 global apps := Map()
 ; global appIcons := Map()
 global configFileName := "appShortCutConfig.txt"
+global searchTypes := Map(
+    "google", "https://www.google.com/search?q="
+)
+global currentSearchType := "google"
 
 ; Appearance
 ; backgroundColor := "Black"
@@ -28,10 +32,12 @@ shortcutList.MarginY := 0
 ; bindings
 global bindings := Map(
     "toggleShortcutList", "!F7",
+    "quickSearch", "!g"
 )
 
 bindingFunctions := Map(
-    "toggleShortcutList", ToggleUI
+    "toggleShortcutList", ToggleUI,
+    "quickSearch", QuickSearch
 )
 
 ; Utilities
@@ -132,6 +138,40 @@ Execute(path) {
         MsgBox("File does not exist! Please check if the path in the configfile is an exe file, a shortcut/link to an exe file, a system programs e.g notepad")
     }
 }
+
+ExecuteOrSearch(path) {
+    try {
+        Run (path)
+    } catch {
+        Search(path)
+    }
+}
+
+Search(query) {
+    global currentSearchType, searchTypes
+    query := StrReplace(query, " ", "+")  ; simple space to +
+    url := searchTypes[currentSearchType] query
+    run url
+}
+
+GetSelectedText() {
+    selected := ""
+    ClipSaved := ClipboardAll()   ; Save original clipboard (including formats)
+    A_Clipboard := ""               ; Clear clipboard
+    Send "^c"                  ; Copy selection
+    
+    if (ClipWait(2)) {
+        selected := A_Clipboard
+    }
+    A_Clipboard := ClipSaved        ; Restore old clipboard
+    return selected
+}
+
+QuickSearch(*) {
+    text := GetSelectedText()
+    ExecuteOrSearch(text)
+}
+
 
 ; GetIcon(path) {
 ;     global iconList
