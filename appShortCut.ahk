@@ -1,7 +1,7 @@
 #Requires AutoHotkey v2.0
 
 global apps := Map()
-global appIcons := Map()
+; global appIcons := Map()
 global configFileName := "appShortCutConfig.txt"
 
 ; Appearance
@@ -23,7 +23,7 @@ shortcutList.MarginX := 0
 shortcutList.MarginY := 0
 
 ; icons
-global iconList := IL_Create()
+; global iconList := IL_Create()
 
 ; bindings
 global bindings := Map(
@@ -92,7 +92,7 @@ ReadConfiguration() {
                     }
                 } else {    
                     apps[key] := val
-                    appIcons[key] := GetIcon(val)
+                    ; appIcons[key] := GetIcon(val)
                 }
             }
         }
@@ -133,29 +133,29 @@ Execute(path) {
     }
 }
 
-GetIcon(path) {
-    global iconList
-    if (RegExMatch(path, "i)^https?://")) {
-        ; Attempt to find default browser
-        out := ""
-        RunWait "reg query HKCU\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice /v ProgId", , "Hide", &out
-        if RegExMatch(out, "ProgId\s+REG_SZ\s+(.+)", &match) {
-            progId := match[1]
-            cmdOut := ""
-            RunWait 'reg query "HKCR\' progId '\shell\open\command" /ve', , "Hide", &cmdOut
-            if RegExMatch(cmdOut, 'REG_SZ\s+"?([^"]+\.exe)', &cmdMatch) {
-                browserExe := cmdMatch[1]
-                iconIndex := IL_Add(iconList, browserExe)
-                return iconIndex
-            }
-        }
-        return -1  ; failed to resolve
-    } else {
-        ; Assume it's a file path
-        iconIndex := IL_Add(iconList, path)
-        return iconIndex
-    }
-}
+; GetIcon(path) {
+;     global iconList
+;     if (RegExMatch(path, "i)^https?://")) {
+;         ; Attempt to find default browser
+;         out := ""
+;         RunWait "reg query HKCU\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice /v ProgId", , "Hide", &out
+;         if RegExMatch(out, "ProgId\s+REG_SZ\s+(.+)", &match) {
+;             progId := match[1]
+;             cmdOut := ""
+;             RunWait 'reg query "HKCR\' progId '\shell\open\command" /ve', , "Hide", &cmdOut
+;             if RegExMatch(cmdOut, 'REG_SZ\s+"?([^"]+\.exe)', &cmdMatch) {
+;                 browserExe := cmdMatch[1]
+;                 iconIndex := IL_Add(iconList, browserExe)
+;                 return iconIndex
+;             }
+;         }
+;         return -1  ; failed to resolve
+;     } else {
+;         ; Assume it's a file path
+;         iconIndex := IL_Add(iconList, path)
+;         return iconIndex
+;     }
+; }
 
 ; Flow
 
@@ -167,19 +167,21 @@ ReadConfiguration()
 ; Register UI
 for app_name, path in apps {
     ; Set up ImageList for the button icons
-    if (iconList && appIcons.Has(app_name)) {
-        ; Create button with icon on the left
-        button := shortcutList.AddButton("w200 h30 +BackgroundTrans +0x0100", "  " app_name)
-        button.SetFont(fontSettings, prefferedFont)
+    ; if (iconList && appIcons.Has(app_name)) {
+    ;     ; Create button with icon on the left
+    ;     button := shortcutList.AddButton("w200 h30 +BackgroundTrans +0x0100", "  " app_name)
+    ;     button.SetFont(fontSettings, prefferedFont)
         
-        ; Apply icon to button
-        SendMessage(0x1607, 1, iconList, button) ; BCM_SETIMAGELIST
-        SendMessage(0x160C, 0, appIcons[app_name], button) ; BM_SETIMAGE
-    } else {
-        ; Fallback for when icon isn't available
-        button := shortcutList.AddButton("w200 h30 +BackgroundTrans +0x0100", "    " app_name)
-        button.SetFont(fontSettings, prefferedFont)
-    }
+    ;     ; ; Apply icon to button
+    ;     ; SendMessage(0x1607, 1, iconList, button) ; BCM_SETIMAGELIST
+    ;     ; SendMessage(0x160C, 0, appIcons[app_name], button) ; BM_SETIMAGE
+    ; } else {
+    ;     ; Fallback for when icon isn't available
+    ;     button := shortcutList.AddButton("w200 h30 +BackgroundTrans +0x0100", "    " app_name)
+    ;     button.SetFont(fontSettings, prefferedFont)
+    ; }
+    button := shortcutList.AddButton("w200 h30 +BackgroundTrans +0x0100", "    " app_name)
+    button.SetFont(fontSettings, prefferedFont)
 
     button.path_to_program := path    
     button.OnEvent("Click", (ctrl, *) => Execute(ctrl.path_to_program))

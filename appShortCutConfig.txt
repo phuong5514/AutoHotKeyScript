@@ -10,5 +10,7 @@ obs=steam://rungameid/1905180
 fileExplorer=explorer.exe
 mail=https://outlook.office365.com/mail/
 zalo=C:\Users\LENOVO\AppData\Local\Programs\Zalo\Zalo.exe
+coursera=https://www.coursera.org/
+notebooklm=https://notebooklm.google.com/
 *
-
+toggleShortcutList=XButton2
