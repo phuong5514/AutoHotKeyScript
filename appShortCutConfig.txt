@@ -17,4 +17,7 @@ notebooklm=https://notebooklm.google.com/
 toggleShortcutList=XButton2
 quickSearch=XButton1
 *
+wikipedia=https://en.wikipedia.org/wiki/Special:Search?search=
+youtube=https://www.youtube.com/results?search_query=
+stackOverflow=https://stackoverflow.com/search?q=
 

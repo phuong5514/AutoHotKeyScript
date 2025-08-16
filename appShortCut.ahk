@@ -5,9 +5,6 @@ global apps := Map()
 global configFileName := "appShortCutConfig.txt"
 global searchTypes := Map(
     "google", "https://www.google.com/search?q=",
-    "wikipedia", "https://en.wikipedia.org/wiki/Special:Search?search=",
-    "youtube", "https://www.youtube.com/results?search_query=",
-    "stackOverflow", "https://stackoverflow.com/search?q=",
 )
 global currentSearchType := "google"
 
@@ -79,9 +76,26 @@ HideMenuUI() {
     shortcutList.Hide()
 }
 
+ApplyConfig(configurableMap, key, val) {
+    configurableMap[key] := val
+}
+
+IsLineComment(line) {
+    if (line = "" || SubStr(line, 1, 1) = ";") {
+        return true
+    }
+}
+
+IsSwitchMap(line) {
+    if (line = "*" || SubStr(line,1,1) = "*") {
+        return true
+    }
+}
+
+global configurableMaps := [apps , bindings, searchTypes]
 ReadConfiguration() {
-    global configFileName, apps
-    bindingConfig := false
+    global configFileName, apps, configurableMaps
+    currentMapIndex := 1
     try {
         configFile := FileOpen(configFileName, "r")
         if !configFile {
@@ -90,29 +104,26 @@ ReadConfiguration() {
 
         while !configFile.AtEOF {
             line := Trim(configFile.ReadLine())
-            if (line = "" || SubStr(line, 1, 1) = ";")
+            if IsLineComment(line) {
                 continue
-            if (line = "*" || SubStr(line,1,1) = "*") {
-                bindingConfig := true
-                continue
+            }
+
+            If IsSwitchMap(line) {
+                currentMapIndex := currentMapIndex + 1
+                if (currentMapIndex > configurableMaps.Length) {
+                    break
+                } else {
+                    continue
+                }
             }
 
             parts := StrSplit(line, "=", , 2)
 
-            if (!bindingConfig) {
-                
-            }
             if (parts.Length = 2) {
                 key := Trim(parts[1])
                 val := Trim(parts[2])
-                if (bindingConfig) {
-                    if (bindings.Has(key)) {
-                        bindings[key] := val
-                    }
-                } else {    
-                    apps[key] := val
-                    ; appIcons[key] := GetIcon(val)
-                }
+
+                ApplyConfig(configurableMaps[currentMapIndex], key, val)
             }
         }
 
