@@ -251,6 +251,7 @@ searchEngineOptionsString := ""
 for key, val in searchTypes
     searchEngineOptionsString .= key "|"
 searchEngineOptions := StrSplit(searchEngineOptionsString, "|")
+searchEngineOptions.Pop()
 
 engineSelector.Add("DropDownList", "vColorChoice Choose1", searchEngineOptions)
 engineSelector["ColorChoice"].OnEvent("Change", OnSearchEngineChange)
