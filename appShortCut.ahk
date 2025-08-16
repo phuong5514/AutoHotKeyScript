@@ -241,7 +241,7 @@ for key, val in searchTypes
     searchEngineOptionsString .= key "|"
 searchEngineOptions := StrSplit(searchEngineOptionsString, "|")
 
-engineSelector.Add("DropDownList", "vColorChoice" ,searchEngineOptions)
+engineSelector.Add("DropDownList", "vColorChoice Choose1", searchEngineOptions)
 engineSelector["ColorChoice"].OnEvent("Change", OnSearchEngineChange)
 
 ; bind hotkeys
