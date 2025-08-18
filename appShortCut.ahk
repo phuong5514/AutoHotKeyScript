@@ -147,7 +147,7 @@ CreateConfigFile() {
         configFile.WriteLine("; Format:") 
         configFile.WriteLine("; 1st part: application_name=path_to_program")
         configFile.WriteLine("; 1st part note: path_to_program need to be a path to an exe file, or a shortcut (.lnk file of an exe)")
-        configFile.WriteLine("; 1st part note: be careful when adding and using some system program like explorer, closing all instance of those programs can be harmful to your computer (notepad is safe though)")
+        configFile.WriteLine("; 1st part note: be careful when adding and using some system program like explorer, closing all instance of those programs can be harmful to your computer (notepad is safe though), you should add an aterisk * at the end of application_name to disable the close button")
         configFile.WriteLine("; 2nd part: function=key")
         configFile.WriteLine("; 3rd part: search_type=query_href")
 
@@ -321,31 +321,76 @@ ReadConfiguration()
 ; Register UI
 ; menu
 for app_name, path in apps {
-    if (!IsStringAWebLink(path)) {
-        button := shortcutList.AddButton("xs w142 h30 +BackgroundTrans +0x0100", "    " app_name)
-        button.SetFont(fontSettings, prefferedFont)
-
-        button.path_to_program := path    
-        button.program_name := app_name
-        button.OnEvent("Click", (ctrl, *) => Execute(ctrl.path_to_program))
-
+    isWebLink := IsStringAWebLink(path)
+    isSpecialApp := SubStr(app_name, -1) = "*"
+    displayName := isSpecialApp ? SubStr(app_name, 1, StrLen(app_name) - 1) : app_name
+    
+    ; Create the main button with appropriate width
+    button := shortcutList.AddButton(
+        "xs " (isWebLink ? "w200" : (isSpecialApp ? "w166" : "w142")) " h30 +BackgroundTrans +0x0100", 
+        "    " displayName
+    )
+    button.SetFont(fontSettings, prefferedFont)
+    button.path_to_program := path    
+    button.program_name := app_name
+    button.OnEvent("Click", (ctrl, *) => Execute(ctrl.path_to_program))
+    
+    ; For non-web applications
+    if (!isWebLink) {
+        ; Add running instance counter
         instanceRunningCount := shortcutList.AddText("w34 h30 x+0 +Center", "0")
         instanceRunningCount.SetFont(altFontSettings, prefferedFont)
         appRunningCounters[app_name] := instanceRunningCount
-
-        closeAllButton := shortcutList.AddButton("w24 h30 x+0 +BackgroundTrans", "X")
-        closeAllButton.path_to_program := path
-        closeAllButton.program_name := app_name
-        closeAllButton.OnEvent("Click", (ctrl, *) => KillAllInstance(ctrl.program_name))
-    } else {
-        button := shortcutList.AddButton("xs w200 h30 +BackgroundTrans +0x0100", "    " app_name)
-        button.SetFont(fontSettings, prefferedFont)
-
-        button.path_to_program := path    
-        button.program_name := app_name
-        button.OnEvent("Click", (ctrl, *) => Execute(ctrl.path_to_program))
+        
+        ; Add close button only for regular apps
+        if (!isSpecialApp) {
+            closeAllButton := shortcutList.AddButton("w24 h30 x+0 +BackgroundTrans", "X")
+            closeAllButton.program_name := app_name
+            closeAllButton.OnEvent("Click", (ctrl, *) => KillAllInstance(ctrl.program_name))
+        }
     }
 }
+
+; for app_name, path in apps {
+;     if (!IsStringAWebLink(path)) {
+;         if (SubStr(app_name, -1) = "*") {
+;             displayName := SubStr(app_name, 1, StrLen(app_name) - 1)
+;             button := shortcutList.AddButton("xs w166 h30 +BackgroundTrans +0x0100", "    " displayName)
+;             button.SetFont(fontSettings, prefferedFont)
+
+;             button.path_to_program := path    
+;             button.program_name := app_name
+;             button.OnEvent("Click", (ctrl, *) => Execute(ctrl.path_to_program))
+
+;             instanceRunningCount := shortcutList.AddText("w34 h30 x+0 +Center", "0")
+;             instanceRunningCount.SetFont(altFontSettings, prefferedFont)
+;             appRunningCounters[app_name] := instanceRunningCount
+;         } else {
+;             button := shortcutList.AddButton("xs w142 h30 +BackgroundTrans +0x0100", "    " app_name)
+;             button.SetFont(fontSettings, prefferedFont)
+
+;             button.path_to_program := path    
+;             button.program_name := app_name
+;             button.OnEvent("Click", (ctrl, *) => Execute(ctrl.path_to_program))
+
+;             instanceRunningCount := shortcutList.AddText("w34 h30 x+0 +Center", "0")
+;             instanceRunningCount.SetFont(altFontSettings, prefferedFont)
+;             appRunningCounters[app_name] := instanceRunningCount
+
+;             closeAllButton := shortcutList.AddButton("w24 h30 x+0 +BackgroundTrans", "X")
+;             closeAllButton.path_to_program := path
+;             closeAllButton.program_name := app_name
+;             closeAllButton.OnEvent("Click", (ctrl, *) => KillAllInstance(ctrl.program_name))
+;         }
+;     } else {
+;         button := shortcutList.AddButton("xs w200 h30 +BackgroundTrans +0x0100", "    " app_name)
+;         button.SetFont(fontSettings, prefferedFont)
+
+;         button.path_to_program := path    
+;         button.program_name := app_name
+;         button.OnEvent("Click", (ctrl, *) => Execute(ctrl.path_to_program))
+;     }
+; }
 
 searchEngineOptionsString := ""
 for key, val in searchTypes
