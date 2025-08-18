@@ -1,22 +1,18 @@
 #Requires AutoHotkey v2.0
 
 global apps := Map()
-; global appIcons := Map()
+
 global configFileName := "appShortCutConfig.txt"
 global searchTypes := Map(
     "google", "https://www.google.com/search?q=",
 )
 global currentSearchType := "google"
 
-; Appearance
-; backgroundColor := "Black"
-; fontSettings := "s14 cWhite"
-; prefferedFont := "Segoe UI"
-
-backgroundColor := "242323"
+backgroundColor := "ccccccc"
 textColor := "f9f9f9"
 fontSettings := "s10 c000000"
 prefferedFont := "Segoe UI"
+altFontSettings := "s14 c000000"
 
 ; Menu UI
 global menuUiOn := false
@@ -26,6 +22,10 @@ shortcutList.SetFont(fontSettings, prefferedFont)
 shortcutList.MarginX := 0
 shortcutList.MarginY := 0
 
+global appRunningCounters := Map()
+global closeAllInstanceButtons := Map()
+global processTracker := ProcessTrackerTimer(apps, appRunningCounters)
+
 ; Search Settings UI
 global searchSettingOn := false
 engineSelector := Gui("+AlwaysOnTop -Caption +ToolWindow +Border")
@@ -33,9 +33,6 @@ engineSelector.BackColor := backgroundColor
 engineSelector.SetFont(fontSettings, prefferedFont)
 engineSelector.MarginX := 0
 engineSelector.MarginY := 0
-
-; icons
-; global iconList := IL_Create()
 
 ; bindings
 global bindings := Map(
@@ -62,18 +59,22 @@ ToggleMenuUI(*) {
 }
 
 ShowMenuUI() {
-    global menuUiOn
+    global menuUiOn, Timer
     menuUiOn := true
     cursorX := 0
     cursorY := 0
     MouseGetPos &cursorX, &cursorY
     shortcutList.Show("x" cursorX " y" cursorY " AutoSize")
+
+    processTracker.Start()
 }
 
 HideMenuUI() {
     global menuUiOn
     menuUiOn := false
     shortcutList.Hide()
+
+    processTracker.Stop()
 }
 
 ApplyConfig(configurableMap, key, val) {
@@ -98,9 +99,6 @@ ReadConfiguration() {
     currentMapIndex := 1
     try {
         configFile := FileOpen(configFileName, "r")
-        if !configFile {
-            CreateConfigFile()
-        }
 
         while !configFile.AtEOF {
             line := Trim(configFile.ReadLine())
@@ -130,7 +128,8 @@ ReadConfiguration() {
         configFile.Close()
 
     } catch Error as e {
-        MsgBox("Error reading configuration: " e.Message)
+        ; MsgBox("Error reading configuration: " e.Message)
+        CreateConfigFile()
     }
 }
 
@@ -144,10 +143,14 @@ CreateConfigFile() {
         }
 
         configFile.WriteLine("; App Shortcut Configuration")
-        configFile.WriteLine("; There are two parts, seperated by '*' character")
+        configFile.WriteLine("; There are three (3) parts, seperated by '*' line")
         configFile.WriteLine("; Format:") 
         configFile.WriteLine("; 1st part: application_name=path_to_program")
+        configFile.WriteLine("; 1st part note: path_to_program need to be a path to an exe file, or a shortcut (.lnk file of an exe)")
+        configFile.WriteLine("; 1st part note: be careful when adding and using some system program like explorer, closing all instance of those programs can be harmful to your computer (notepad is safe though), you should add an aterisk * at the end of application_name to disable the close button")
         configFile.WriteLine("; 2nd part: function=key")
+        configFile.WriteLine("; 3rd part: search_type=query_href")
+
         configFile.WriteLine()
         configFile.Close()
     } catch Error as e {
@@ -157,9 +160,9 @@ CreateConfigFile() {
 
 Execute(path) {
     try {
-        Run (path)
-    } catch {
-        MsgBox("File does not exist! Please check if the path in the configfile is an exe file, a shortcut/link to an exe file, a system programs e.g notepad")
+        Run(path)
+    } catch Error as e{
+        MsgBox(e.Message)   
     }
 }
 
@@ -226,6 +229,88 @@ HideSearchEngineSelector() {
     engineSelector.Hide()
 }
 
+KillAllInstance(app_name) {
+    global apps
+    try {
+        processName := convertToProcessName(apps[app_name])
+        all_pids := GetAllProcessInstancePIDs(processName)
+
+        for pid in all_pids {
+            ProcessClose(pid)
+        }
+    } catch Error as e {
+        MsgBox(e.Message)
+    }
+}
+
+IsStringAWebLink(str) {
+    ; return RegExMatch(str, "i)^((https?|ftp|smtp):\/\/)?(www\.)?[a-z0-9\-]+(\.[a-z0-9\-]+)+(\/([\w\-\._~:/?#\[\]@!$&'()*+,;=])*)?$")
+    return RegExMatch(str, "i)^(https?|ftp|smtp|mailto|data):\/\/|^(www\.)")
+}
+
+GetAllProcessInstancePIDs(processName) {
+    all_pids := Array()
+    for process in ComObjGet("winmgmts:").ExecQuery("Select * from Win32_Process where Name='" processName "'")
+        all_pids.Push(process.ProcessId)
+    return all_pids
+}
+
+CountProcessInstance(path) {
+    processName := convertToProcessName(path)
+    all_pids := GetAllProcessInstancePIDs(processName)
+    return all_pids.Length
+}
+
+convertToProcessName(path) {
+    trimmedPath := TrimPath(path)
+    if (!RegExMatch(trimmedPath, "\.exe$"))
+        return trimmedPath ".exe"
+    return trimmedPath
+}
+
+TrimPath(path) {
+    ; Extract just the filename from the full path
+    trimmedPath := StrSplit(path, '\').Pop()
+    
+    ; Remove .lnk extension if present
+    if (RegExMatch(trimmedPath, "\.lnk$"))
+        trimmedPath := SubStr(trimmedPath, 1, StrLen(trimmedPath) - 4)
+        
+    return trimmedPath
+}
+
+class ProcessTrackerTimer {
+    __New(apps, counters) {
+        this.counters := counters
+        this.apps := apps
+        this.interval := 1000
+        this.timer := ObjBindMethod(this, "Tick")
+    }
+
+    Start() {
+        SetTimer this.timer, this.interval
+    }
+    Stop() {
+        ; To turn off the timer, we must pass the same object as before:
+        SetTimer this.timer, 0
+    }
+
+    UpdateCounter(app_name, path) {
+        instanceRunningCounter := this.counters[app_name]
+        runningProcessCount := CountProcessInstance(path)
+        instanceRunningCounter.Text := runningProcessCount
+    }
+
+    ; In this example, the timer calls this method:
+    Tick() {
+        for app_name, path in this.apps {
+            if (!IsStringAWebLink(path)) {
+                this.UpdateCounter(app_name, path)
+            }
+        }
+    }
+}
+
 ; Flow
 
 ; Read Configuration
@@ -236,16 +321,76 @@ ReadConfiguration()
 ; Register UI
 ; menu
 for app_name, path in apps {
-    button := shortcutList.AddButton("w200 h30 +BackgroundTrans +0x0100", "    " app_name)
+    isWebLink := IsStringAWebLink(path)
+    isSpecialApp := SubStr(app_name, -1) = "*"
+    displayName := isSpecialApp ? SubStr(app_name, 1, StrLen(app_name) - 1) : app_name
+    
+    ; Create the main button with appropriate width
+    button := shortcutList.AddButton(
+        "xs " (isWebLink ? "w200" : (isSpecialApp ? "w166" : "w142")) " h30 +BackgroundTrans +0x0100", 
+        "    " displayName
+    )
     button.SetFont(fontSettings, prefferedFont)
-
     button.path_to_program := path    
+    button.program_name := app_name
     button.OnEvent("Click", (ctrl, *) => Execute(ctrl.path_to_program))
+    
+    ; For non-web applications
+    if (!isWebLink) {
+        ; Add running instance counter
+        instanceRunningCount := shortcutList.AddText("w34 h30 x+0 +Center", "0")
+        instanceRunningCount.SetFont(altFontSettings, prefferedFont)
+        appRunningCounters[app_name] := instanceRunningCount
+        
+        ; Add close button only for regular apps
+        if (!isSpecialApp) {
+            closeAllButton := shortcutList.AddButton("w24 h30 x+0 +BackgroundTrans", "X")
+            closeAllButton.program_name := app_name
+            closeAllButton.OnEvent("Click", (ctrl, *) => KillAllInstance(ctrl.program_name))
+        }
+    }
 }
 
-; search engine selector
-; searchSettingOn.Add("DropDownList", "vColorChoice", searchTypes)
-; searchsettingOn.OnEvent(" Change", (ctrl, *) => currentSearchType := ctrl.Value)
+; for app_name, path in apps {
+;     if (!IsStringAWebLink(path)) {
+;         if (SubStr(app_name, -1) = "*") {
+;             displayName := SubStr(app_name, 1, StrLen(app_name) - 1)
+;             button := shortcutList.AddButton("xs w166 h30 +BackgroundTrans +0x0100", "    " displayName)
+;             button.SetFont(fontSettings, prefferedFont)
+
+;             button.path_to_program := path    
+;             button.program_name := app_name
+;             button.OnEvent("Click", (ctrl, *) => Execute(ctrl.path_to_program))
+
+;             instanceRunningCount := shortcutList.AddText("w34 h30 x+0 +Center", "0")
+;             instanceRunningCount.SetFont(altFontSettings, prefferedFont)
+;             appRunningCounters[app_name] := instanceRunningCount
+;         } else {
+;             button := shortcutList.AddButton("xs w142 h30 +BackgroundTrans +0x0100", "    " app_name)
+;             button.SetFont(fontSettings, prefferedFont)
+
+;             button.path_to_program := path    
+;             button.program_name := app_name
+;             button.OnEvent("Click", (ctrl, *) => Execute(ctrl.path_to_program))
+
+;             instanceRunningCount := shortcutList.AddText("w34 h30 x+0 +Center", "0")
+;             instanceRunningCount.SetFont(altFontSettings, prefferedFont)
+;             appRunningCounters[app_name] := instanceRunningCount
+
+;             closeAllButton := shortcutList.AddButton("w24 h30 x+0 +BackgroundTrans", "X")
+;             closeAllButton.path_to_program := path
+;             closeAllButton.program_name := app_name
+;             closeAllButton.OnEvent("Click", (ctrl, *) => KillAllInstance(ctrl.program_name))
+;         }
+;     } else {
+;         button := shortcutList.AddButton("xs w200 h30 +BackgroundTrans +0x0100", "    " app_name)
+;         button.SetFont(fontSettings, prefferedFont)
+
+;         button.path_to_program := path    
+;         button.program_name := app_name
+;         button.OnEvent("Click", (ctrl, *) => Execute(ctrl.path_to_program))
+;     }
+; }
 
 searchEngineOptionsString := ""
 for key, val in searchTypes
