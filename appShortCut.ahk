@@ -1,8 +1,6 @@
 #Requires AutoHotkey v2.0
 
 global apps := Map()
-global appRunningCounts := Map()
-global appPIDs := Map()
 
 global configFileName := "appShortCutConfig.txt"
 global searchTypes := Map(
@@ -26,6 +24,7 @@ shortcutList.MarginY := 0
 
 global appRunningCounters := Map()
 global closeAllInstanceButtons := Map()
+global processTracker := ProcessTrackerTimer(apps, appRunningCounters)
 
 ; Search Settings UI
 global searchSettingOn := false
@@ -60,18 +59,22 @@ ToggleMenuUI(*) {
 }
 
 ShowMenuUI() {
-    global menuUiOn
+    global menuUiOn, Timer
     menuUiOn := true
     cursorX := 0
     cursorY := 0
     MouseGetPos &cursorX, &cursorY
     shortcutList.Show("x" cursorX " y" cursorY " AutoSize")
+
+    processTracker.Start()
 }
 
 HideMenuUI() {
     global menuUiOn
     menuUiOn := false
     shortcutList.Hide()
+
+    processTracker.Stop()
 }
 
 ApplyConfig(configurableMap, key, val) {
@@ -153,27 +156,11 @@ CreateConfigFile() {
     }
 }
 
-Execute(name , path) {
-    global appPIDs
+Execute(path) {
     try {
-        pid := 0
-        Run(path, , , &pid)
-
-        if (pid = 0) {
-            return
-        }
-
-        if (!IsStringAWebLink(path)) {
-            if (appPIDs.Has(name)) {
-                appPIDs[name].Push(pid)
-            } else {
-                appPIDs[name] = [pid]
-            }
-            UpdateCounter(name)
-        }
+        Run(path)
     } catch Error as e{
-        MsgBox(e.Message)
-        ; MsgBox("File does not exist! Please check if the path in the configfile is an exe file, a shortcut/link to an exe file, a system programs e.g notepad")
+        MsgBox(e.Message)   
     }
 }
 
@@ -241,21 +228,17 @@ HideSearchEngineSelector() {
 }
 
 KillAllInstance(app_name) {
-    global appPIDs
     try {
-        list := appPIDs[app_name]
-        if (!list) {
+        processName := convertToProcessName(path)
+        all_pids := GetAllProcessInstancePIDs(processName)
+
+        if (!all_pids) {
             return
         }
-        Loop list.Length {
-            MsgBox("closing " list[A_Index])
-            pid := list[A_Index]
-            ProcessClose(pid)
-            WinClose("ahk_pid " pid)
-        }
 
-        Loop list.Length {
-            list.Pop()
+        Loop all_pids.Length {
+            pid := all_pids[A_Index]
+            ProcessClose(pid)
         }
 
         ResetCounter(app_name)
@@ -268,25 +251,69 @@ IsStringAWebLink(str) {
     return RegExMatch(str, "i)^(https?:\/\/)?(www\.)?[a-z0-9\-]+\.[a-z]{2,}([\/?#].*)?$")
 }
 
-UpdateCounter(app_name) {
-    global appRunningCounters
-    instanceRunningCount := appRunningCounts[app_name]
-    if (!instanceRunningCount) {
-        return
-    }
-    instanceRunningCount.counter += 1
-    instanceRunningCount.Text := instanceRunningCount.counter
+GetAllProcessInstancePIDs(processName) {
+    all_pids := Array()
+    for process in ComObjGet("winmgmts:").ExecQuery("Select * from Win32_Process where Name='" processName "'")
+        all_pids.Push(process.ProcessId)
+    return all_pids
+}
 
+CountProcessInstance(path) {
+    processName := convertToProcessName(path)
+    all_pids := GetAllProcessInstancePIDs(processName)
+    return all_pids.Length
+}
+
+convertToProcessName(path) {
+    trimmedPath := TrimPath(path)
+    if (!RegExMatch(trimmedPath, "\.exe$"))
+        return trimmedPath ".exe"
+    return trimmedPath
+}
+
+TrimPath(path) {
+    return StrSplit(path, '\').Pop()
 }
 
 ResetCounter(app_name) {
     global appRunningCounters
-    instanceRunningCount := appRunningCounts[app_name]
-    if (!instanceRunningCount) {
+    instanceRunningCounter := appRunningCounters[app_name]
+    if (!instanceRunningCounter) {
         return
     }
-    instanceRunningCount.counter := 0
-    instanceRunningCount.Text := instanceRunningCount.counter
+    instanceRunningCounter.Text := instanceRunningCounter.counter
+}
+
+class ProcessTrackerTimer {
+    __New(apps, counters) {
+        this.counters := counters
+        this.apps := apps
+        this.interval := 1000
+        this.timer := ObjBindMethod(this, "Tick")
+    }
+
+    Start() {
+        SetTimer this.timer, this.interval
+    }
+    Stop() {
+        ; To turn off the timer, we must pass the same object as before:
+        SetTimer this.timer, 0
+    }
+
+    UpdateCounter(app_name, path) {
+        instanceRunningCounter := this.counters[app_name]
+        runningProcessCount := CountProcessInstance(path)
+        instanceRunningCounter.Text := runningProcessCount
+    }
+
+    ; In this example, the timer calls this method:
+    Tick() {
+        for app_name, path in this.apps {
+            if (!IsStringAWebLink(path)) {
+                this.UpdateCounter(app_name, path)
+            }
+        }
+    }
 }
 
 ; Flow
@@ -305,14 +332,11 @@ for app_name, path in apps {
 
         button.path_to_program := path    
         button.program_name := app_name
-        button.OnEvent("Click", (ctrl, *) => Execute(ctrl.program_name, ctrl.path_to_program))
-
-        appPIDs[app_name] := Array()
+        button.OnEvent("Click", (ctrl, *) => Execute(ctrl.path_to_program))
 
         instanceRunningCount := shortcutList.AddText("w34 h30 x+0 +Center", "0")
         instanceRunningCount.SetFont(altFontSettings, prefferedFont)
-        instanceRunningCount.counter := 0
-        appRunningCounts[app_name] := instanceRunningCount
+        appRunningCounters[app_name] := instanceRunningCount
 
         closeAllButton := shortcutList.AddButton("w24 h30 x+0 +BackgroundTrans", "X")
         closeAllButton.path_to_program := path
@@ -324,7 +348,7 @@ for app_name, path in apps {
 
         button.path_to_program := path    
         button.program_name := app_name
-        button.OnEvent("Click", (ctrl, *) => Execute(ctrl.program_name, ctrl.path_to_program))
+        button.OnEvent("Click", (ctrl, *) => Execute(ctrl.path_to_program))
     }
 }
 
