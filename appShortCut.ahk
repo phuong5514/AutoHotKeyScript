@@ -143,9 +143,11 @@ CreateConfigFile() {
         }
 
         configFile.WriteLine("; App Shortcut Configuration")
-        configFile.WriteLine("; There are two parts, seperated by '*' character")
+        configFile.WriteLine("; There are three (3) parts, seperated by '*' line")
         configFile.WriteLine("; Format:") 
         configFile.WriteLine("; 1st part: application_name=path_to_program")
+        configFile.WriteLine("; 1st part note: path_to_program need to be a path to an exe file, or a shortcut (.lnk file of an exe)")
+        configFile.WriteLine("; 1st part note: be careful when adding and using some system program like explorer, closing all instance of those programs can be harmful to your computer (notepad is safe though)")
         configFile.WriteLine("; 2nd part: function=key")
         configFile.WriteLine("; 3rd part: search_type=query_href")
 
@@ -242,7 +244,8 @@ KillAllInstance(app_name) {
 }
 
 IsStringAWebLink(str) {
-    return RegExMatch(str, "i)^(https?:\/\/)?(www\.)?[a-z0-9\-]+\.[a-z]{2,}([\/?#].*)?$")
+    ; return RegExMatch(str, "i)^((https?|ftp|smtp):\/\/)?(www\.)?[a-z0-9\-]+(\.[a-z0-9\-]+)+(\/([\w\-\._~:/?#\[\]@!$&'()*+,;=])*)?$")
+    return RegExMatch(str, "i)^(https?|ftp|smtp|mailto|data):\/\/|^(www\.)")
 }
 
 GetAllProcessInstancePIDs(processName) {
@@ -266,7 +269,14 @@ convertToProcessName(path) {
 }
 
 TrimPath(path) {
-    return StrSplit(path, '\').Pop()
+    ; Extract just the filename from the full path
+    trimmedPath := StrSplit(path, '\').Pop()
+    
+    ; Remove .lnk extension if present
+    if (RegExMatch(trimmedPath, "\.lnk$"))
+        trimmedPath := SubStr(trimmedPath, 1, StrLen(trimmedPath) - 4)
+        
+    return trimmedPath
 }
 
 class ProcessTrackerTimer {
