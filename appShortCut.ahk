@@ -298,7 +298,7 @@ class ProcessTrackerTimer {
     UpdateCounter(app_name, path) {
         instanceRunningCounter := this.counters[app_name]
         runningProcessCount := CountProcessInstance(path)
-        instanceRunningCounter.Text := runningProcessCount
+        instanceRunningCounter.Text := runningProcessCount > 99 ? "99+" : runningProcessCount
     }
 
     ; In this example, the timer calls this method:
