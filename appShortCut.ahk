@@ -228,20 +228,14 @@ HideSearchEngineSelector() {
 }
 
 KillAllInstance(app_name) {
+    global apps
     try {
-        processName := convertToProcessName(path)
+        processName := convertToProcessName(apps[app_name])
         all_pids := GetAllProcessInstancePIDs(processName)
 
-        if (!all_pids) {
-            return
-        }
-
-        Loop all_pids.Length {
-            pid := all_pids[A_Index]
+        for pid in all_pids {
             ProcessClose(pid)
         }
-
-        ResetCounter(app_name)
     } catch Error as e {
         MsgBox(e.Message)
     }
@@ -273,15 +267,6 @@ convertToProcessName(path) {
 
 TrimPath(path) {
     return StrSplit(path, '\').Pop()
-}
-
-ResetCounter(app_name) {
-    global appRunningCounters
-    instanceRunningCounter := appRunningCounters[app_name]
-    if (!instanceRunningCounter) {
-        return
-    }
-    instanceRunningCounter.Text := instanceRunningCounter.counter
 }
 
 class ProcessTrackerTimer {
