@@ -1,0 +1,23 @@
+<root>
+    <command>
+        <name>for-loop</name>
+        <params>var:i, start:0, end:10, step:++</params>
+        <template>
+            for (let {var} = {start}; {var} < {end}; {var}{step}) {
+
+            }
+        </template>
+
+    </command>
+
+    <command>
+        <name>while-loop</name>
+        <params>con: x==y</params>
+        <template>
+            while ({con}) {
+                
+            }
+        </template>
+
+    </command>
+</root>
