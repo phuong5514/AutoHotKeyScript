@@ -203,8 +203,6 @@ class BlueprintWarehouse {
             }
         }
 
-        MsgBox(minIndent)
-        
         ; If no minimum indentation found or it's 0, return original
         if (minIndent <= 0) {
             return rawString
