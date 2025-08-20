@@ -146,6 +146,7 @@ class BlueprintWarehouse {
                 name := this.RegexExtract(commandBlock, "<name>([\s\S]*?)</name>")
                 paramsString := this.RegexExtract(commandBlock, "<params>([\s\S]*?)</params>")
                 template := this.RegexExtract(commandBlock, "<template>([\s\S]*?)</template>")
+                processedTemplate := this.ProcessTemplate(template)
 
                 if (!name || !template) {
                     continue  ; Skip invalid commands
@@ -168,12 +169,64 @@ class BlueprintWarehouse {
                 }
 
                 ; create a new blueprint and add it to blueprints
-                newBlueprint := Blueprint(params, defaultValueMap, template)
+                newBlueprint := Blueprint(params, defaultValueMap, processedTemplate)
                 this.blueprints[name] := newBlueprint
             }
         } catch Error as e {
             this.WriteDefaultBlueprintSet(setName)
         }
+    }
+
+    ProcessTemplate(rawString) {
+        ; Remove leading and trailing whitespace/newlines
+        rawString := Trim(rawString, "`r`n")
+        
+        ; Split into lines
+        lines := StrSplit(rawString, "`n")
+        if (lines.Length = 0) {
+            return ""
+        }
+        
+        ; Find the minimum indentation level across all non-empty lines
+        minIndent := -1  ; -1 means not set yet
+        
+        for _, line in lines {
+            if (Trim(line) = "") {
+                continue  ; Skip empty lines when calculating indentation
+            }
+            
+            ; Count leading whitespace
+            leadingSpaces := StrLen(line) - StrLen(LTrim(line))
+            
+            if (minIndent = -1 || leadingSpaces < minIndent) {
+                minIndent := leadingSpaces
+            }
+        }
+
+        MsgBox(minIndent)
+        
+        ; If no minimum indentation found or it's 0, return original
+        if (minIndent <= 0) {
+            return rawString
+        }
+        
+        ; Process all lines to remove the common indentation
+        result := ""
+        for i, line in lines {
+            if (i > 1) {
+                result .= "`n"  ; Add newline before all lines except the first
+            }
+            
+            if (Trim(line) = "") {
+                ; Keep empty lines as empty
+                result .= ""
+            } else {
+                ; Remove the minimum indentation
+                result .= SubStr(line, minIndent + 1)
+            }
+        }
+        
+        return result
     }
 
     RegexExtract(haystack, regex) {
