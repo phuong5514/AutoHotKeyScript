@@ -404,7 +404,6 @@ class App {
             blueprint := this.warehouse.GetBluePrint(trimmedLine)
 
             prefix := Substr(line, 1, StrLen(line) - StrLen(trimmedLine)) ; get the spaces / tabs before the starting character '/'
-            MsgBox("prefix: '" prefix "'")
             if (blueprint = "") {
                 ToolTip("No items matched the comand")
                 SetTimer () => ToolTip(), -3000
