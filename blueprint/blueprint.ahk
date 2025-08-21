@@ -32,7 +32,6 @@ class Blueprint {
         for line in outTemplateLines {
             result .= prefix "" line "`n"
         }
-        MsgBox(result)
 
         return result
     }
@@ -379,6 +378,7 @@ class App {
         A_Clipboard := ""             ; Clear clipboard
         
         ; Select the current line of text
+        Send "{Home}"
         Send "{Home}"                 ; Go to beginning of line
         Send "+{End}"                 ; Select to end of line
 
@@ -404,6 +404,7 @@ class App {
             blueprint := this.warehouse.GetBluePrint(trimmedLine)
 
             prefix := Substr(line, 1, StrLen(line) - StrLen(trimmedLine)) ; get the spaces / tabs before the starting character '/'
+            MsgBox("prefix: '" prefix "'")
             if (blueprint = "") {
                 ToolTip("No items matched the comand")
                 SetTimer () => ToolTip(), -3000
@@ -420,6 +421,7 @@ class App {
     }
 
     DeleteLine() {
+        Send "{Home}"
         Send "{Home}"             ; Go to beginning of line
         Send "+{End}"    
         Send "{Del}"
