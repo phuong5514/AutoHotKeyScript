@@ -1,6 +1,7 @@
 #Requires AutoHotkey v2.0
 
 global splitCharacter := A_Space
+global spacePlaceholder := "+"
 
 class Blueprint {
     __New(params, defaults, template) {
@@ -9,26 +10,31 @@ class Blueprint {
         this.template := template
     }
 
-    ExpandTemplate(inputs) {
+    ExpandTemplate(inputs, prefix := "") {
         userArgs := StrSplit(inputs, splitCharacter)
         filled := Map()
 
         outputTemplate := this.template
 
         Loop this.params.Length {
-            if (A_Index = 1) {
-                continue
-            }
-
             key := this.params[A_Index]
-            value := (A_Index <= userArgs.Length && userArgs[A_Index] != "") ? userArgs[A_Index] : this.defaults[key]
-            filled[key] := value
+            val := (A_Index < userArgs.Length && userArgs[A_Index + 1] != "") ? userArgs[A_Index + 1] : this.defaults[key]
+            val := StrReplace(val, spacePlaceholder, A_Space)
+            filled[key] := val
         }
 
         for k, v in filled
             outputTemplate := StrReplace(outputTemplate, "{" k "}", v)
 
-        return outputTemplate
+
+        result := ""
+        outTemplateLines := StrSplit(outputTemplate, '`n')
+        for line in outTemplateLines {
+            result .= prefix "" line "`n"
+        }
+        MsgBox(result)
+
+        return result
     }
 }
 
@@ -153,7 +159,7 @@ class BlueprintWarehouse {
                 }
 
                 defaultValueMap := Map()
-                params := []
+                params := Array()
                 for param in StrSplit(paramsString, ",") {
                     if !param
                         continue
@@ -391,14 +397,19 @@ class App {
             return
         }
 
-        if ("/" = SubStr(line, 1, 1)) { ; detect begining of command
-            blueprint := this.warehouse.GetBluePrint(line)
+        trimmedLine := Trim(line) ; we want to preserve the initial number of tab / spaces before the starting character '/'
+
+
+        if ("/" = SubStr(trimmedLine, 1, 1)) { ; detect begining of command
+            blueprint := this.warehouse.GetBluePrint(trimmedLine)
+
+            prefix := Substr(line, 1, StrLen(line) - StrLen(trimmedLine)) ; get the spaces / tabs before the starting character '/'
             if (blueprint = "") {
                 ToolTip("No items matched the comand")
                 SetTimer () => ToolTip(), -3000
                 return
             } else {
-                result := blueprint.ExpandTemplate(line)
+                result := blueprint.ExpandTemplate(line, prefix)
                 ; write the result
                 this.DeleteLine()     ; Added this. prefix
                 this.WriteText(result) ; Added this. prefix
