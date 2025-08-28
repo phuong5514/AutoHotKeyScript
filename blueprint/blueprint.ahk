@@ -1,7 +1,41 @@
 #Requires AutoHotkey v2.0
 
 global splitCharacter := A_Space
-global spacePlaceholder := "+"
+global paramValueSeperator := ":"
+
+; class Blueprint {
+;     __New(params, defaults, template) {
+;         this.params := params
+;         this.defaults := defaults
+;         this.template := template
+;     }
+
+;     ExpandTemplate(inputs, prefix := "") {
+;         userArgs := StrSplit(inputs, splitCharacter)
+;         filled := Map()
+
+;         outputTemplate := this.template
+
+;         Loop this.params.Length {
+;             key := this.params[A_Index]
+;             val := (A_Index < userArgs.Length && userArgs[A_Index + 1] != "") ? userArgs[A_Index + 1] : this.defaults[key]
+;             val := StrReplace(val, spacePlaceholder, A_Space)
+;             filled[key] := val
+;         }
+
+;         for k, v in filled
+;             outputTemplate := StrReplace(outputTemplate, "{" k "}", v)
+
+
+;         result := ""
+;         outTemplateLines := StrSplit(outputTemplate, '`n')
+;         for line in outTemplateLines {
+;             result .= prefix "" line "`n"
+;         }
+
+;         return result
+;     }
+; }
 
 class Blueprint {
     __New(params, defaults, template) {
@@ -10,30 +44,131 @@ class Blueprint {
         this.template := template
     }
 
+    ; Main expansion
     ExpandTemplate(inputs, prefix := "") {
-        userArgs := StrSplit(inputs, splitCharacter)
-        filled := Map()
+        paramInputs := this.GetParamLine(inputs)
+        tokens := this.ParseArgs(paramInputs)
 
+        filled := Map()
         outputTemplate := this.template
 
-        Loop this.params.Length {
-            key := this.params[A_Index]
-            val := (A_Index < userArgs.Length && userArgs[A_Index + 1] != "") ? userArgs[A_Index + 1] : this.defaults[key]
-            val := StrReplace(val, spacePlaceholder, A_Space)
+        ; Fill in from flags + positional order
+        posIndex := 1
+        for key in this.params {
+            if tokens.Has(key) { ; from --key=value
+                val := tokens[key]
+            } else if (posIndex <= tokens["_pos"].Length) {
+                val := tokens["_pos"][posIndex]
+                posIndex++
+            } else {
+                val := this.defaults[key]
+            }
+
             filled[key] := val
         }
 
+        ; Replace placeholders in template
         for k, v in filled
             outputTemplate := StrReplace(outputTemplate, "{" k "}", v)
 
-
+        ; Restore prefix indentation
         result := ""
-        outTemplateLines := StrSplit(outputTemplate, '`n')
-        for line in outTemplateLines {
-            result .= prefix "" line "`n"
-        }
+        for line in StrSplit(outputTemplate, "`n")
+            result .= prefix line "`n"
 
         return result
+    }
+
+    GetParamLine(input) {
+        ; remove the initial /{name} from the input line
+        if (input = "" || !RegExMatch(input, "^/\S+"))
+            return ""  ; Return empty if input is invalid
+            
+        ; Find the first space after the command
+        spacePos := InStr(input, A_Space)
+        if (!spacePos)
+            return ""  ; No parameters found
+            
+        ; Return everything after the first space
+        return SubStr(input, spacePos + 1)
+    }
+
+    ; --- Parser that supports quoted args + flags ---
+    ParseArgs(input) {
+        tokens := Map()
+        tokens["_pos"] := []  ; ordered positional args
+
+        i := 1
+        while (i <= StrLen(input)) {
+            ch := SubStr(input, i, 1)
+
+            if (ch = " " || ch = "`t") {
+                i++
+                continue
+            }
+
+            if (ch = "'" || ch = "`"") {
+                quote := ch
+                j := i + 1
+                arg := ""
+                while (j <= StrLen(input)) {
+                    ch2 := SubStr(input, j, 1)
+                    if (ch2 = quote) {
+                        break
+                    }
+                    arg .= ch2
+                    j++
+                }
+                i := j + 1
+                this.AddToken(tokens, arg)
+                continue
+            }
+
+            ; detect flag: --key=value
+            if (SubStr(input, i, 2) = "--") {
+                j := i + 2
+                key := ""
+                val := ""
+                while (j <= StrLen(input)) {
+                    ch2 := SubStr(input, j, 1)
+                    if (ch2 = "=") {
+                        val := SubStr(input, j + 1)
+                        break
+                    }
+                    key .= ch2
+                    j++
+                }
+
+                ; strip surrounding quotes if any
+                if (SubStr(val, 1, 1) = "`"") {
+                    val := RegExReplace(val, "`"", "")
+                } else if (SubStr(val, 1, 1) = "'") {
+                    val := RegExReplace(val, "`'", "")
+                }
+
+                tokens[key] := val
+                break
+            }
+
+            ; fallback: normal unquoted token
+            j := i
+            arg := ""
+            while (j <= StrLen(input)) {
+                ch2 := SubStr(input, j, 1)
+                if (ch2 = " " || ch2 = "`t")
+                    break
+                arg .= ch2
+                j++
+            }
+            i := j
+            this.AddToken(tokens, arg)
+        }
+
+        return tokens
+    }
+
+    AddToken(tokens, value) {
+        tokens["_pos"].Push(value)
     }
 }
 
@@ -398,12 +533,11 @@ class App {
         }
 
         trimmedLine := Trim(line) ; we want to preserve the initial number of tab / spaces before the starting character '/'
-
-
         if ("/" = SubStr(trimmedLine, 1, 1)) { ; detect begining of command
             blueprint := this.warehouse.GetBluePrint(trimmedLine)
-
-            prefix := Substr(line, 1, StrLen(line) - StrLen(trimmedLine)) ; get the spaces / tabs before the starting character '/'
+            commandStartPos := InStr(line, trimmedLine)
+            prefix := SubStr(line, 1, commandStartPos - 1)
+            ; prefix := Substr(line, 1, StrLen(RTrim(line)) - StrLen(trimmedLine)) ; get the spaces / tabs before the starting character '/'
             if (blueprint = "") {
                 ToolTip("No items matched the comand")
                 SetTimer () => ToolTip(), -3000
