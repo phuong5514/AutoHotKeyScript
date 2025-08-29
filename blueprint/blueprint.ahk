@@ -3,40 +3,6 @@
 global splitCharacter := A_Space
 global paramValueSeperator := ":"
 
-; class Blueprint {
-;     __New(params, defaults, template) {
-;         this.params := params
-;         this.defaults := defaults
-;         this.template := template
-;     }
-
-;     ExpandTemplate(inputs, prefix := "") {
-;         userArgs := StrSplit(inputs, splitCharacter)
-;         filled := Map()
-
-;         outputTemplate := this.template
-
-;         Loop this.params.Length {
-;             key := this.params[A_Index]
-;             val := (A_Index < userArgs.Length && userArgs[A_Index + 1] != "") ? userArgs[A_Index + 1] : this.defaults[key]
-;             val := StrReplace(val, spacePlaceholder, A_Space)
-;             filled[key] := val
-;         }
-
-;         for k, v in filled
-;             outputTemplate := StrReplace(outputTemplate, "{" k "}", v)
-
-
-;         result := ""
-;         outTemplateLines := StrSplit(outputTemplate, '`n')
-;         for line in outTemplateLines {
-;             result .= prefix "" line "`n"
-;         }
-
-;         return result
-;     }
-; }
-
 class Blueprint {
     __New(params, defaults, template) {
         this.params := params
@@ -176,6 +142,7 @@ class BlueprintWarehouse {
     static DEFAULT_CONFIG_FILE := "blueprintConfig.txt"
     __New() {
         this.blueprintSetConfigFiles := Map() ; Map set name - file path
+        this.names := Array()
         this.blueprints := Map() ; Map commandstring - blueprint object
         this.setKeys := Array()
         this.ReadConfigFile()    
@@ -311,6 +278,7 @@ class BlueprintWarehouse {
                 ; create a new blueprint and add it to blueprints
                 newBlueprint := Blueprint(params, defaultValueMap, processedTemplate)
                 this.blueprints[name] := newBlueprint
+                this.names := name
             }
         } catch Error as e {
             this.WriteDefaultBlueprintSet(setName)
@@ -374,12 +342,12 @@ class BlueprintWarehouse {
     }
 
     GetBluePrint(commandString) {
-        ; format /{name} param1 param2 param3 paramx
+        ; format {command Start char}{name} param1 param2 param3 paramx
         ; only get the name and return
 
         parts := StrSplit(commandString, splitCharacter)
         if (parts.Length >= 1) {
-            commandName := SubStr(parts[1], 2)  ; Remove the / from the front
+            commandName := SubStr(parts[1], 2)  ; Remove the command Start char (default is "/") from the front
             if this.blueprints.Has(commandName) {
                 return this.blueprints[commandName]
             }
@@ -390,18 +358,24 @@ class BlueprintWarehouse {
     SwitchBlueprintSet(setName) {
         ; a bit inefficient but it's either this or having to handle a "current set" value and it's default value 
         this.blueprints.Clear()
+        this.names := Array()
         this.ReadBlueprintSet(setName)
     }
 
     GetBluePrintSetNames() {
         return this.setKeys
     }
+
+    GetBluePrintNames() {
+        return this.names
+    }
     
 }
 
 class App {
     static DEFAULT_CONFIG_FILE := "blueprintAppConfig.txt"
-    static IsUiOn := false
+    static IsSelectorUIOn := false
+    static IsSuggestionUIOn := false
 
     static backgroundColor := "ccccccc"
     static textColor := "f9f9f9"
@@ -409,12 +383,17 @@ class App {
     static prefferedFont := "Segoe UI"
     static altFontSettings := "s14 c000000"
 
-
     __New() {
         this.bindings := Map(
             "toggleSelector", "!s",
             "runCommand", "!a"
+            "commandStart", "/"
         )
+
+        this.SuggestionBuffer := "" ; capture inputs after the commandStart character
+        this.SuggestionList := []
+
+        this.matchLimit := 6
 
         this.InitialUiSetup()
         this.InitialWarehouseSetup()
@@ -430,6 +409,20 @@ class App {
         this.SelectorUI.SetFont(App.fontSettings, App.prefferedFont)
         this.SelectorUI.MarginX := 0
         this.SelectorUI.MarginY := 0
+
+        this.SuggestionUI := Gui("+AlwaysOnTop -Caption +ToolWindow + Border", "Autocomplete")
+        this.SuggestionUI.BackColor := App.backgroundColor
+        this.SuggestionUI.SetFont(App.fontSettings, App.prefferedFont)
+        this.SuggestionUI.MarginX := 0
+        this.SuggestionUI.MarginY := 0
+
+        ; Handle Enter key inside the ListBox
+        #HotIf WinActive("Autocomplete")
+        Enter::
+            InsertSelection(this.SuggestionUI["Choice"])
+        return
+        Esc::this.SuggestionUI.Destroy()
+        #HotIf
     }
 
     SelectorUiSetup() {
@@ -438,6 +431,84 @@ class App {
             this.SelectorUI["ColorChoice"].OnEvent("Change", ObjBindMethod(this, "OnBlueprintSetChange"))
         } catch Error as e{
             MsgBox(e.Message)
+        }
+    }
+
+    ClearSuggestion() {
+        for item in this.SuggestionList {
+            item.Destroy()
+        }
+    }
+
+    SuggestionUiUpdate() {
+        try {
+            ClearSuggestion()
+            suggestedBlueprints := FetchSuggestionList()
+
+            this.SuggestionUI.Add("ListBox", "vChoice r5 w200 OnSelect", StrJoin("`n", suggestedBlueprints*))
+        } catch Error as e {
+            MsgBox(e.Message)
+        }
+    }
+
+    OnSelect(ctrl, info) {
+        if (info.Event = "DoubleClick") {
+            InsertSelection(ctrl)
+        }
+    }
+
+    CaptureCharacter(char) {
+        this.SuggestionBuffer .= char
+        commands := this.warehouse.GetBluePrintNames()
+
+        filtered := []
+        for cmd in commands {
+            if InStr(cmd, this.SuggestionBuffer) {
+                filtered.Push(cmd)
+                if (filtered.Length >= this.matchLimit)
+                    break
+            }
+        }
+
+        list := filtered.Length ? StrJoin("`n", filtered*) : "<no match>"
+
+        choiceCtrl := this.SuggestionUI["Choice"]
+        choiceCtrl.Delete()
+        choiceCtrl.Add(list)
+        choiceCtrl.Choose(1)
+    }
+
+    StartAutocomplete() {
+        CaretGetPos &x, &y
+
+        this.SuggestionUI.Destroy()  ; make sure no leftovers
+        this.SuggestionUI := Gui("+AlwaysOnTop -Caption +ToolWindow", "Autocomplete")
+        this.SuggestionUI.SetFont(App.fontSettings, App.prefferedFont)
+        this.SuggestionUI.MarginX := 0, this.SuggestionUI.MarginY := 0
+        this.SuggestionUI.Add("ListBox", "vChoice r5 w200 gOnSelect")
+        this.SuggestionUI.Show("x" x " y" y " AutoSize")
+
+        ; Start listening for keys after "/"
+        iHook := InputHook("V")   ; V = visible text mode
+        iHook.KeyOpt("{Enter}{Esc}{Tab}{Space}", "E") ; End keys
+        iHook.OnChar := (ih, char) => this.CaptureCharacter(char)
+        iHook.OnEnd  := (ih) => this.EndAutocomplete(ih)
+        iHook.Start()
+    }
+
+    EndAutocomplete(ih) {
+        choiceCtrl := this.SuggestionUI["Choice"]
+        if (ih.EndKey = "Enter") {
+            this.InsertSelection(choiceCtrl)
+        }
+        this.SuggestionUI.Destroy()
+    }
+
+    InsertSelection(ctrl) {
+        choice := ctrl.Text
+        if choice != "" && choice != "<no match>") {
+            DeleteLine(false)
+            SendText "/" choice " "
         }
     }
 
@@ -452,7 +523,7 @@ class App {
     }
 
     ToggleUI(*) {
-        if (App.IsUiOn) {
+        if (App.IsSelectorUIOn) {
             this.SelectorUI.Hide()
         } else {
             cursorX := 0
@@ -461,7 +532,7 @@ class App {
             this.SelectorUI.Show("x" cursorX " y" cursorY " AutoSize")
         }
 
-        App.IsUiOn := !App.IsUiOn
+        App.IsSelectorUIOn := !App.IsSelectorUIOn
     }
 
     SetBinding() {
@@ -533,11 +604,11 @@ class App {
         }
 
         trimmedLine := Trim(line) ; we want to preserve the initial number of tab / spaces before the starting character '/'
-        if ("/" = SubStr(trimmedLine, 1, 1)) { ; detect begining of command
+        if (SubStr(trimmedLine, 1, 1) = this.bindings["commandStart"]) { ; detect begining of command
             blueprint := this.warehouse.GetBluePrint(trimmedLine)
             commandStartPos := InStr(line, trimmedLine)
             prefix := SubStr(line, 1, commandStartPos - 1)
-            ; prefix := Substr(line, 1, StrLen(RTrim(line)) - StrLen(trimmedLine)) ; get the spaces / tabs before the starting character '/'
+            ; prefix := Substr(line, 1, StrLen(RTrim(line)) - StrLen(trimmedLine)) ; get the spaces / tabs before the starting character 
             if (blueprint = "") {
                 ToolTip("No items matched the comand")
                 SetTimer () => ToolTip(), -3000
@@ -553,8 +624,10 @@ class App {
         }
     }
 
-    DeleteLine() {
-        Send "{Home}"
+    DeleteLine(full := true) {
+        if (full) {
+            Send "{Home}"
+        }
         Send "{Home}"             ; Go to beginning of line
         Send "+{End}"    
         Send "{Del}"
@@ -600,3 +673,14 @@ class App {
 }
 
 program := App()
+
+#HotIf WinActive("ahk_exe Code.exe")
+/::
+    text := GetTextBeforeCaret(7)  ; custom fn to read N chars before caret
+    if RegExMatch(text, "i)https?:|</") {
+        SendText("/")  ; just type it
+    } else {
+        program.StartAutocomplete()
+    }
+return
+#HotIf
