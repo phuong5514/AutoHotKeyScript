@@ -766,6 +766,8 @@ class AutoCompletionBox {
         this.buffer := ""
         this.matchedSuggestions := Array()
         this.matchLimit := 10
+
+        this.acceptKeys := ["Enter", "Tab"]
     }
 
     GetBuffer() {
@@ -774,43 +776,52 @@ class AutoCompletionBox {
 
     StartAutoComplete() {
         CaretGetPos &x, &y
-        this.CreateUI(x, y)
+        if (AutoCompletionBox.IsUiOn) {
+            return
+        }
 
+        this.CreateUI(x, y)
         this.SetupInputHook()
     }
 
     CreateUI(x, y) {
-        
-
         global fontSettings, prefferedFont
-        if (AutoCompletionBox.IsUiOn) {
-            this.SuggestionUI.Destroy()  ; make sure no leftovers
-        }
         AutoCompletionBox.IsUiOn := true
-        this.SuggestionUI := Gui("+AlwaysOnTop -Caption +ToolWindow", "Autocomplete")
+        ; Add +E0x08000000 style to prevent focus stealing
+        this.SuggestionUI := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x08000000", "Autocomplete")
         this.SuggestionUI.SetFont(fontSettings, prefferedFont)
         this.SuggestionUI.MarginX := 0, this.SuggestionUI.MarginY := 0
 
-        ; In the ListBox option string `"vChoice r5 w200 gOnSelect"`:
-        ; this.SuggestionUI.Show("x" x " y" y " AutoSize")
-
-
-        ; Add ListBox for suggestions with 5 visible rows and width of 200
-        this.SuggestionUI.Add("ListBox", "vChoice w200", ["Loading..."])
+        ; Add ListBox for suggestions with 6 visible rows and width of 200
+        this.SuggestionUI.Add("ListBox", "vChoice r6 w200", ["<no result>"])
         
         ; Create handler for selection
         OnSelect := ObjBindMethod(this, "InsertSelection")
         this.SuggestionUI["Choice"].OnEvent("Change", OnSelect)
-        this.SuggestionUI.Show("x" x " y" y " AutoSize")
+        
+        ; Use NoActivate option to show window without focusing it
+        this.SuggestionUI.Show("x" x " y" y " AutoSize NoActivate")
     }
 
     SetupInputHook() {
         ; Start listening for keys after "/"
         this.iHook := InputHook("V")   ; V = visible text mode
         this.iHook.KeyOpt("{Enter}{Esc}{Tab}{Space}", "E") ; End keys
+        this.iHook.KeyOpt("{BackSpace}", "N")  ; N = notify when this key is pressed
         this.iHook.OnChar := (ih, char) => this.CaptureCharacter(char)
-        this.iHook.OnEnd  := (ih) => this.OnEnd(ih)
+        this.iHook.OnKeyDown := (ih, vk, sc) => (vk = 8) ? this.PopCharacter() : ""  ; 8 is the virtual key code for Backspace
+        this.iHook.OnEnd := (ih) => this.HandleInputEnd(ih)
         this.iHook.Start()
+    }
+
+    PopCharacter() {
+        if (StrLen(this.buffer) > 0) {
+            this.buffer := SubStr(this.buffer, 1, -1)  ; Remove the last character
+            this.UpdateList()
+        } else if (StrLen(this.buffer) = 0) {
+            ; End the suggestion after deleting the initial character
+            this.CancelAutocomplete()
+        }
     }
 
     CaptureCharacter(char) {
@@ -819,9 +830,13 @@ class AutoCompletionBox {
     }
 
     UpdateList() {
+        if ("" = this.buffer) {
+            return
+        }
         commands := this.controller.GetBluePrintNames()
+        
+        filtered := [this.buffer]
 
-        filtered := []
         for cmd in commands {
             if InStr(cmd, this.buffer) {
                 filtered.Push(cmd)
@@ -829,7 +844,6 @@ class AutoCompletionBox {
                     break
             }
         }
-
 
         choiceCtrl := this.SuggestionUI["Choice"]
         choiceCtrl.Delete()
@@ -839,24 +853,47 @@ class AutoCompletionBox {
         }
     }
 
-    OnEnd(ih) {
-        choiceCtrl := this.SuggestionUI["Choice"]
-
-        this.iHook.Stop()
-        this.iHook := ""
-        
-        if (ih.EndKey = "Enter") {
-            this.InsertSelection(choiceCtrl)
+    HandleInputEnd(ih) {
+        if (!AutoCompletionBox.IsUiOn) {
+            return  ; Already destroyed, don't proceed
         }
         
+        ; Check if the end was triggered by an accept key
+        for acceptKey in this.acceptKeys {
+            if (ih.EndKey = acceptKey) {
+                this.AcceptSelection()
+                return
+            }
+        }
+        
+        ; If we get here, it wasn't an accept key, so cancel
+        this.CancelAutocomplete()
+    }
+
+    AcceptSelection() {
+        if (!AutoCompletionBox.IsUiOn) {
+            return
+        }
+        
+        choiceCtrl := this.SuggestionUI["Choice"]
+        this.InsertSelection(choiceCtrl)
+        this.EndAutocomplete()
+    }
+
+    CancelAutocomplete() {
+        if (this.iHook) {
+            this.iHook.Stop()
+            this.iHook := ""
+        }
         this.EndAutocomplete()
     }
 
     EndAutocomplete() {
-        this.SuggestionUI.Destroy()
-        this.buffer := ""
-
-        AutoCompletionBox.IsUIOn := false
+        if (AutoCompletionBox.IsUiOn) {
+            this.SuggestionUI.Destroy()
+            this.buffer := ""
+            AutoCompletionBox.IsUIOn := false
+        }
     }
 
     InsertSelection(ctrl, *) {
@@ -1081,7 +1118,7 @@ class App {
 
     CheckCommandStart() {
         line := this.GetLineText()
-        Send "{End}" 
+        Send "{Right}" 
         raw := Trim(line)
         if (line = this.bindings["commandStart"] && this.warehouse.IsSetLoaded()) {
             this.StartAutoComplete()
