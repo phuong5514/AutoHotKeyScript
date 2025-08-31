@@ -768,6 +768,7 @@ class AutoCompletionBox {
         this.matchLimit := 10
 
         this.acceptKeys := ["Enter", "Tab"]
+        this.suggestedItemsCount := 0
     }
 
     GetBuffer() {
@@ -817,7 +818,7 @@ class AutoCompletionBox {
         this.SuggestionUI.Add("ListBox", "vChoice r6 w200", ["<no result>"])
         
         ; Create handler for selection
-        OnSelect := ObjBindMethod(this, "InsertSelection")
+        OnSelect := ObjBindMethod(this, "AcceptSelection")
         this.SuggestionUI["Choice"].OnEvent("Change", OnSelect)
         
         ; Use NoActivate option to show window without focusing it
@@ -827,12 +828,43 @@ class AutoCompletionBox {
     SetupInputHook() {
         ; Start listening for keys after "/"
         this.iHook := InputHook("V")   ; V = visible text mode
+        ; Add arrow keys to the monitored keys
         this.iHook.KeyOpt("{Enter}{Esc}{Tab}{Space}", "E") ; End keys
-        this.iHook.KeyOpt("{BackSpace}", "N")  ; N = notify when this key is pressed
+        this.iHook.KeyOpt("{BackSpace}{Up}{Down}", "N")  ; N = notify when this key is pressed
         this.iHook.OnChar := (ih, char) => this.CaptureCharacter(char)
-        this.iHook.OnKeyDown := (ih, vk, sc) => (vk = 8) ? this.PopCharacter() : ""  ; 8 is the virtual key code for Backspace
+        this.iHook.OnKeyDown := (ih, vk, sc) => this.HandleHookVK(vk)
+
         this.iHook.OnEnd := (ih) => this.HandleInputEnd(ih)
         this.iHook.Start()
+    }
+
+    HandleHookVK(vk) {
+        switch vk {
+            case 8: this.PopCharacter() ; VK_BACKSPACE
+            case 38: this.MoveSelection(-1) ; VK_UP
+            case 40: this.MoveSelection(1) ; VK_DOWN
+        }   
+    }
+
+    MoveSelection(direction) {
+        if (!AutoCompletionBox.IsUiOn)
+            return
+            
+        choiceCtrl := this.SuggestionUI["Choice"]
+        currentIndex := choiceCtrl.Value
+        
+        if (this.suggestedItemsCount = 0)
+            return
+            
+        ; Calculate the new index with wrapping
+        newIndex := currentIndex + direction
+        if (newIndex < 1)
+            newIndex := this.suggestedItemsCount
+        else if (newIndex > this.suggestedItemsCount)
+            newIndex := 1
+            
+        ; Set the new selection
+        choiceCtrl.Choose(newIndex)
     }
 
     PopCharacter() {
@@ -869,7 +901,9 @@ class AutoCompletionBox {
         choiceCtrl := this.SuggestionUI["Choice"]
         choiceCtrl.Delete()
         choiceCtrl.Add(filtered)
-        if (filtered.Length > 0) {
+        this.suggestedItemsCount := filtered.Length
+
+        if (this.suggestedItemsCount > 0) {
             choiceCtrl.Choose(1)
         }
     }
@@ -891,22 +925,26 @@ class AutoCompletionBox {
         this.CancelAutocomplete()
     }
 
-    AcceptSelection() {
+    AcceptSelection(*) {
         if (!AutoCompletionBox.IsUiOn) {
             return
         }
         
         choiceCtrl := this.SuggestionUI["Choice"]
         this.InsertSelection(choiceCtrl)
-        this.EndAutocomplete()
+        this.CancelAutocomplete() ; weird naming choice I know
     }
 
     CancelAutocomplete() {
+        this.EndInputHook()
+        this.EndAutocomplete()
+    }
+
+    EndInputHook() {
         if (this.iHook) {
             this.iHook.Stop()
             this.iHook := ""
         }
-        this.EndAutocomplete()
     }
 
     EndAutocomplete() {
