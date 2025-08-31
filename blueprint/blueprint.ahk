@@ -525,7 +525,8 @@ class BlueprintWarehouse {
         this.names := Array()
         this.blueprints := Map() ; Map commandstring - blueprint object
         this.setKeys := Array()
-        this.ReadConfigFile()    
+        this.ReadConfigFile() 
+        this.ready := false   
     }
 
     IsLineComment(line) {
@@ -658,7 +659,7 @@ class BlueprintWarehouse {
                 ; create a new blueprint and add it to blueprints
                 newBlueprint := Blueprint(params, defaultValueMap, processedTemplate)
                 this.blueprints[name] := newBlueprint
-                this.names := name
+                this.names.Push(name)
             }
         } catch Error as e {
             this.WriteDefaultBlueprintSet(setName)
@@ -740,6 +741,7 @@ class BlueprintWarehouse {
         this.blueprints.Clear()
         this.names := Array()
         this.ReadBlueprintSet(setName)
+        this.ready := true
     }
 
     GetBluePrintSetNames() {
@@ -748,6 +750,10 @@ class BlueprintWarehouse {
 
     GetBluePrintNames() {
         return this.names
+    }
+
+    IsSetLoaded() {
+        return this.ready
     }
     
 }
@@ -790,7 +796,7 @@ class AutoCompletionBox {
 
 
         ; Add ListBox for suggestions with 5 visible rows and width of 200
-        this.SuggestionUI.Add("ListBox", "vChoice r5 w200", ["Loading..."])
+        this.SuggestionUI.Add("ListBox", "vChoice w200", ["Loading..."])
         
         ; Create handler for selection
         OnSelect := ObjBindMethod(this, "InsertSelection")
@@ -800,15 +806,16 @@ class AutoCompletionBox {
 
     SetupInputHook() {
         ; Start listening for keys after "/"
-        iHook := InputHook("V")   ; V = visible text mode
-        iHook.KeyOpt("{Enter}{Esc}{Tab}{Space}", "E") ; End keys
-        iHook.OnChar := (ih, char) => this.CaptureCharacter(char)
-        iHook.OnEnd  := (ih) => this.EndAutocomplete(ih)
-        iHook.Start()
+        this.iHook := InputHook("V")   ; V = visible text mode
+        this.iHook.KeyOpt("{Enter}{Esc}{Tab}{Space}", "E") ; End keys
+        this.iHook.OnChar := (ih, char) => this.CaptureCharacter(char)
+        this.iHook.OnEnd  := (ih) => this.OnEnd(ih)
+        this.iHook.Start()
     }
 
     CaptureCharacter(char) {
         this.buffer .= char
+        this.UpdateList()
     }
 
     UpdateList() {
@@ -816,33 +823,43 @@ class AutoCompletionBox {
 
         filtered := []
         for cmd in commands {
-            if InStr(cmd, this.SuggestionBuffer) {
+            if InStr(cmd, this.buffer) {
                 filtered.Push(cmd)
                 if (filtered.Length >= this.matchLimit)
                     break
             }
         }
 
-        list := filtered.Length ? StrJoin("`n", filtered*) : "<no match>"
 
         choiceCtrl := this.SuggestionUI["Choice"]
         choiceCtrl.Delete()
-        choiceCtrl.Add(list)
-        choiceCtrl.Choose(1)
+        choiceCtrl.Add(filtered)
+        if (filtered.Length > 0) {
+            choiceCtrl.Choose(1)
+        }
     }
 
-    EndAutocomplete(ih) {
+    OnEnd(ih) {
         choiceCtrl := this.SuggestionUI["Choice"]
+
+        this.iHook.Stop()
+        this.iHook := ""
+        
         if (ih.EndKey = "Enter") {
             this.InsertSelection(choiceCtrl)
         }
+        
+        this.EndAutocomplete()
+    }
+
+    EndAutocomplete() {
         this.SuggestionUI.Destroy()
-        this.SuggestionBuffer := ""
+        this.buffer := ""
 
         AutoCompletionBox.IsUIOn := false
     }
 
-    InsertSelection(ctrl) {
+    InsertSelection(ctrl, *) {
         choice := ctrl.Text
         if (choice != "" && choice != "<no match>") {
             this.controller.DeleteLine(false)
@@ -1007,8 +1024,10 @@ class App {
         }
     }
 
-    DeleteLine() {
-        Send "{Home}"
+    DeleteLine(full := true) {
+        if (full) {
+            Send "{Home}"
+        }
         Send "{Home}"             ; Go to beginning of line
         Send "+{End}"    
         Send "{Del}"
@@ -1061,9 +1080,10 @@ class App {
     }
 
     CheckCommandStart() {
-        line := this.GetLineText() 
+        line := this.GetLineText()
+        Send "{End}" 
         raw := Trim(line)
-        if (line = this.bindings["commandStart"]) {
+        if (line = this.bindings["commandStart"] && this.warehouse.IsSetLoaded()) {
             this.StartAutoComplete()
         }
     }
