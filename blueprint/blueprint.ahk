@@ -453,7 +453,7 @@ class AutoCompletionBox {
         this.SuggestionUI.MarginX := 0, this.SuggestionUI.MarginY := 0
 
         ; Add ListBox for suggestions with 6 visible rows and width of 200
-        this.SuggestionUI.Add("ListBox", "vChoice r6 w200", ["<no result>"])
+        this.SuggestionUI.Add("ListBox", "vChoice w200", ["<no result>"])
         
         ; Create handler for selection
         OnSelect := ObjBindMethod(this, "AcceptSelection")
