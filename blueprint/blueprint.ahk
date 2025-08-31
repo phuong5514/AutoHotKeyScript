@@ -774,11 +774,32 @@ class AutoCompletionBox {
         return this.buffer
     }
 
+    GetUIPosition(&x, &y) {
+        if (!CaretGetPos(&x, &y)) {
+            MouseGetPos(&x, &y) ; fallback incase ahk can not found the caret location (vscode)
+        } else {
+            ; Get the handle of the active window
+            activeHwnd := WinExist("A")
+            
+            ; Get the absolute position of the active window
+            winX := 0
+            winY := 0
+            WinGetPos(&winX, &winY, , , activeHwnd)
+            
+            ; Add window position to caret position for absolute screen coordinates
+            x += winX
+            y += winY + 20
+        }
+    }
+
     StartAutoComplete() {
-        CaretGetPos &x, &y
         if (AutoCompletionBox.IsUiOn) {
             return
         }
+
+        x := -1
+        y := -1
+        this.GetUIPosition(&x, &y)
 
         this.CreateUI(x, y)
         this.SetupInputHook()
