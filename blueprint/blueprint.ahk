@@ -224,7 +224,17 @@ class BlueprintWarehouse {
             configFile.WriteLine(";")
             configFile.WriteLine("; <command>")
             configFile.WriteLine(";     <name>command-name</name>")
-            configFile.WriteLine(";     <params>param1=default1, param2=default2</params>")
+            configFile.WriteLine(";     <params>")
+            configFile.WriteLine(";         <param>")
+            configFile.WriteLine(";             <pName>")
+            configFile.WriteLine(";                 parameter-name")
+            configFile.WriteLine(";             </pName>")
+            configFile.WriteLine(";             <pDefault>")
+            configFile.WriteLine(";                 parameter-default-value(can be empty)>")
+            configFile.WriteLine(";             </pDefault>")
+            configFile.WriteLine(";         </param>")
+            configFile.WriteLine(";         ...")
+            configFile.WriteLine(";     </params>")
             configFile.WriteLine(";     <template>")
             configFile.WriteLine(";         Your template content here, using {param1}, {param2}, etc.")
             configFile.WriteLine(";         Supports multiline templates as well.")
@@ -233,11 +243,24 @@ class BlueprintWarehouse {
             configFile.WriteLine(";")
             configFile.WriteLine("; Example:")
             configFile.WriteLine("; <command>")
-            configFile.WriteLine(";     <name>for-loop</name>")
-            configFile.WriteLine(";     <params>var=i, start=0, end=10, step=++</params>")
+            configFile.WriteLine(";     <name>function</name>")
+            configFile.WriteLine(";     <params>")
+            configFile.WriteLine(";         <param>")
+            configFile.WriteLine(";             <pName>name</pName>")
+            configFile.WriteLine(";             <pDefault>function_name</pDefault>")
+            configFile.WriteLine(";         </param>")
+            configFile.WriteLine(";         <param>")
+            configFile.WriteLine(";             <pName>params</pName>")
+            configFile.WriteLine(";             <pDefault></pDefault>")
+            configFile.WriteLine(";         </param>")
+            configFile.WriteLine(";         <param>")
+            configFile.WriteLine(";             <pName>return_type</pName>")
+            configFile.WriteLine(";             <pDefault>void</pDefault>")
+            configFile.WriteLine(";         </param>")
+            configFile.WriteLine(";     </params>")
             configFile.WriteLine(";     <template>")
-            configFile.WriteLine(";         for (let {var} = {start}; {var} < {end}; {var}{step}) {")
-            configFile.WriteLine(";             // body")
+            configFile.WriteLine(";         {return_type} {name}({params}) {")
+            configFile.WriteLine(";             // function body")
             configFile.WriteLine(";         }")
             configFile.WriteLine(";     </template>")
             configFile.WriteLine("; </command>")
@@ -252,55 +275,74 @@ class BlueprintWarehouse {
 
     ReadBlueprintSet(setName) {
         try {
-            if !this.blueprintSetConfigFiles.Has(setName)
-                throw Error("Blueprint set not found: " . setName)
-                
-            path := this.blueprintSetConfigFiles[setName]
-            configFile := FileOpen(path, "r")
-            if !configFile {
-                throw Error("Could not open blueprint set file")
-            }
-
-            content := configFile.Read()
-            configFile.Close()
-
-            startPos := 1
-            while (startPos := RegExMatch(content, "<command>([\s\S]*?)</command>", &match, startPos)) {
-                commandBlock := match[1]
-                startPos += match.Len
-
-                name := this.RegexExtract(commandBlock, "<name>([\s\S]*?)</name>")
-                paramsString := this.RegexExtract(commandBlock, "<params>([\s\S]*?)</params>")
-                template := this.RegexExtract(commandBlock, "<template>([\s\S]*?)</template>")
-                processedTemplate := this.ProcessTemplate(template)
-
-                if (!name || !template) {
-                    continue  ; Skip invalid commands
-                }
-
-                defaultValueMap := Map()
-                params := Array()
-                for param in StrSplit(paramsString, ",") {
-                    if !param
-                        continue
-                        
-                    parts := StrSplit(Trim(param), ":")
-                    
-                    if parts.Length >= 2 {
-                        key := Trim(parts[1])
-                        value := Trim(parts[2])
-                        params.Push(key)
-                        defaultValueMap[key] := value
-                    }
-                }
-
-                ; create a new blueprint and add it to blueprints
-                newBlueprint := Blueprint(params, defaultValueMap, processedTemplate)
-                this.blueprints[name] := newBlueprint
-                this.names.Push(name)
-            }
+            ; Validate inputs and open file
+            this.ValidateSetExists(setName)
+            content := this.ReadSetConfigFile(setName)
+            
+            ; Parse each command block
+            this.ParseCommandBlocks(content)
         } catch Error as e {
             this.WriteDefaultBlueprintSet(setName)
+        }
+    }
+
+    ValidateSetExists(setName) {
+        if !this.blueprintSetConfigFiles.Has(setName) {
+            throw Error("Blueprint set not found: " . setName)
+        }
+    }
+
+    ReadSetConfigFile(setName) {
+        path := this.blueprintSetConfigFiles[setName]
+        configFile := FileOpen(path, "r")
+        if !configFile {
+            throw Error("Could not open blueprint set file: " . path)
+        }
+            
+        content := configFile.Read()
+        configFile.Close()
+        return content
+    }
+
+    ParseCommandBlocks(content) {
+        startPos := 1
+        while (startPos := RegExMatch(content, "<command>([\s\S]*?)</command>", &match, startPos)) {
+            commandBlock := match[1]
+            startPos += match.Len
+            this.ProcessCommandBlock(commandBlock)
+        }
+    }
+
+    ProcessCommandBlock(commandBlock) {
+        name := this.RegexExtract(commandBlock, "<name>([\s\S]*?)</name>")
+        template := this.RegexExtract(commandBlock, "<template>([\s\S]*?)</template>")
+        paramsString := this.RegexExtract(commandBlock, "<params>([\s\S]*?)</params>")
+
+        if (!name || !template) {
+            return  ; Skip invalid commands
+        }
+            
+        defaultValueMap := Map()
+        params := Array()
+        this.ParseParams(paramsString, &params, &defaultValueMap)
+
+        ; Create blueprint and store it
+        newBlueprint := Blueprint(params, defaultValueMap, this.ProcessTemplate(template))
+        this.blueprints[name] := newBlueprint
+        this.names.Push(name)
+    }
+
+    ParseParams(paramsString, &params, &defaultValueMap) {
+        paramsStartPos := 1
+        while (paramsStartPos := RegExMatch(paramsString, "<param>([\s\S]*?)</param>", &paramMatch, paramsStartPos)) {
+            paramBlock := paramMatch[1]
+            paramsStartPos += paramMatch.Len
+            
+            key := this.RegexExtract(paramBlock, "<pName>([\s\S]*?)</pName>")
+            val := this.RegexExtract(paramBlock, "<pDefault>([\s\S]*?)</pDefault>")
+            
+            params.Push(key)
+            defaultValueMap[key] := val
         }
     }
 
