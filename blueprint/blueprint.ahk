@@ -2,40 +2,24 @@
 
 global splitCharacter := A_Space
 global paramValueSeperator := ":"
+global backgroundColor := "ccccccc"
+global textColor := "f9f9f9"
+global fontSettings := "s10 c000000"
+global prefferedFont := "Segoe UI"
+global altFontSettings := "s14 c000000"
 
-; class Blueprint {
-;     __New(params, defaults, template) {
-;         this.params := params
-;         this.defaults := defaults
-;         this.template := template
-;     }
+; ultility
+StrJoin(char, list) {
+    result := ""
+        
+    for index, item in list {
+        if index > 1
+            result .= char
+        result .= item
+    }
+    return result
+}
 
-;     ExpandTemplate(inputs, prefix := "") {
-;         userArgs := StrSplit(inputs, splitCharacter)
-;         filled := Map()
-
-;         outputTemplate := this.template
-
-;         Loop this.params.Length {
-;             key := this.params[A_Index]
-;             val := (A_Index < userArgs.Length && userArgs[A_Index + 1] != "") ? userArgs[A_Index + 1] : this.defaults[key]
-;             val := StrReplace(val, spacePlaceholder, A_Space)
-;             filled[key] := val
-;         }
-
-;         for k, v in filled
-;             outputTemplate := StrReplace(outputTemplate, "{" k "}", v)
-
-
-;         result := ""
-;         outTemplateLines := StrSplit(outputTemplate, '`n')
-;         for line in outTemplateLines {
-;             result .= prefix "" line "`n"
-;         }
-
-;         return result
-;     }
-; }
 
 class Blueprint {
     __New(params, defaults, template) {
@@ -176,9 +160,11 @@ class BlueprintWarehouse {
     static DEFAULT_CONFIG_FILE := "blueprintConfig.txt"
     __New() {
         this.blueprintSetConfigFiles := Map() ; Map set name - file path
+        this.names := Array()
         this.blueprints := Map() ; Map commandstring - blueprint object
         this.setKeys := Array()
-        this.ReadConfigFile()    
+        this.ReadConfigFile() 
+        this.ready := false   
     }
 
     IsLineComment(line) {
@@ -311,6 +297,7 @@ class BlueprintWarehouse {
                 ; create a new blueprint and add it to blueprints
                 newBlueprint := Blueprint(params, defaultValueMap, processedTemplate)
                 this.blueprints[name] := newBlueprint
+                this.names.Push(name)
             }
         } catch Error as e {
             this.WriteDefaultBlueprintSet(setName)
@@ -374,12 +361,12 @@ class BlueprintWarehouse {
     }
 
     GetBluePrint(commandString) {
-        ; format /{name} param1 param2 param3 paramx
+        ; format {command Start char}{name} param1 param2 param3 paramx
         ; only get the name and return
 
         parts := StrSplit(commandString, splitCharacter)
         if (parts.Length >= 1) {
-            commandName := SubStr(parts[1], 2)  ; Remove the / from the front
+            commandName := SubStr(parts[1], 2)  ; Remove the command Start char (default is "/") from the front
             if this.blueprints.Has(commandName) {
                 return this.blueprints[commandName]
             }
@@ -390,44 +377,261 @@ class BlueprintWarehouse {
     SwitchBlueprintSet(setName) {
         ; a bit inefficient but it's either this or having to handle a "current set" value and it's default value 
         this.blueprints.Clear()
+        this.names := Array()
         this.ReadBlueprintSet(setName)
+        this.ready := true
     }
 
     GetBluePrintSetNames() {
         return this.setKeys
     }
+
+    GetBluePrintNames() {
+        return this.names
+    }
+
+    IsSetLoaded() {
+        return this.ready
+    }
     
+}
+
+class AutoCompletionBox {
+    static IsUiOn := false
+
+    __New(controller) {
+        this.controller := controller
+        this.buffer := ""
+        this.matchedSuggestions := Array()
+        this.matchLimit := 10
+
+        this.acceptKeys := ["Enter", "Tab"]
+        this.suggestedItemsCount := 0
+    }
+
+    GetBuffer() {
+        return this.buffer
+    }
+
+    GetUIPosition(&x, &y) {
+        if (!CaretGetPos(&x, &y)) {
+            MouseGetPos(&x, &y) ; fallback incase ahk can not found the caret location (vscode)
+        } else {
+            ; Get the handle of the active window
+            activeHwnd := WinExist("A")
+            
+            ; Get the absolute position of the active window
+            winX := 0
+            winY := 0
+            WinGetPos(&winX, &winY, , , activeHwnd)
+            
+            ; Add window position to caret position for absolute screen coordinates
+            x += winX
+            y += winY + 20
+        }
+    }
+
+    StartAutoComplete() {
+        if (AutoCompletionBox.IsUiOn) {
+            return
+        }
+
+        x := -1
+        y := -1
+        this.GetUIPosition(&x, &y)
+
+        this.CreateUI(x, y)
+        this.SetupInputHook()
+    }
+
+    CreateUI(x, y) {
+        global fontSettings, prefferedFont
+        AutoCompletionBox.IsUiOn := true
+        ; Add +E0x08000000 style to prevent focus stealing
+        this.SuggestionUI := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x08000000", "Autocomplete")
+        this.SuggestionUI.SetFont(fontSettings, prefferedFont)
+        this.SuggestionUI.MarginX := 0, this.SuggestionUI.MarginY := 0
+
+        ; Add ListBox for suggestions with 6 visible rows and width of 200
+        this.SuggestionUI.Add("ListBox", "vChoice w200", ["<no result>"])
+        
+        ; Create handler for selection
+        OnSelect := ObjBindMethod(this, "AcceptSelection")
+        this.SuggestionUI["Choice"].OnEvent("Change", OnSelect)
+        
+        ; Use NoActivate option to show window without focusing it
+        this.SuggestionUI.Show("x" x " y" y " AutoSize NoActivate")
+    }
+
+    SetupInputHook() {
+        ; Start listening for keys after "/"
+        this.iHook := InputHook("V")   ; V = visible text mode
+        ; Add arrow keys to the monitored keys
+        this.iHook.KeyOpt("{Enter}{Esc}{Tab}{Space}", "E") ; End keys
+        this.iHook.KeyOpt("{BackSpace}{Up}{Down}", "N")  ; N = notify when this key is pressed
+        this.iHook.OnChar := (ih, char) => this.CaptureCharacter(char)
+        this.iHook.OnKeyDown := (ih, vk, sc) => this.HandleHookVK(vk)
+
+        this.iHook.OnEnd := (ih) => this.HandleInputEnd(ih)
+        this.iHook.Start()
+    }
+
+    HandleHookVK(vk) {
+        switch vk {
+            case 8: this.PopCharacter() ; VK_BACKSPACE
+            case 38: this.MoveSelection(-1) ; VK_UP
+            case 40: this.MoveSelection(1) ; VK_DOWN
+        }   
+    }
+
+    MoveSelection(direction) {
+        if (!AutoCompletionBox.IsUiOn)
+            return
+            
+        choiceCtrl := this.SuggestionUI["Choice"]
+        currentIndex := choiceCtrl.Value
+        
+        if (this.suggestedItemsCount = 0)
+            return
+            
+        ; Calculate the new index with wrapping
+        newIndex := currentIndex + direction
+        if (newIndex < 1)
+            newIndex := this.suggestedItemsCount
+        else if (newIndex > this.suggestedItemsCount)
+            newIndex := 1
+            
+        ; Set the new selection
+        choiceCtrl.Choose(newIndex)
+    }
+
+    PopCharacter() {
+        if (StrLen(this.buffer) > 0) {
+            this.buffer := SubStr(this.buffer, 1, -1)  ; Remove the last character
+            this.UpdateList()
+        } else if (StrLen(this.buffer) = 0) {
+            ; End the suggestion after deleting the initial character
+            this.CancelAutocomplete()
+        }
+    }
+
+    CaptureCharacter(char) {
+        this.buffer .= char
+        this.UpdateList()
+    }
+
+    UpdateList() {
+        if ("" = this.buffer) {
+            return
+        }
+        commands := this.controller.GetBluePrintNames()
+        
+        filtered := [this.buffer]
+
+        for cmd in commands {
+            if InStr(cmd, this.buffer) {
+                filtered.Push(cmd)
+                if (filtered.Length >= this.matchLimit)
+                    break
+            }
+        }
+
+        choiceCtrl := this.SuggestionUI["Choice"]
+        choiceCtrl.Delete()
+        choiceCtrl.Add(filtered)
+        this.suggestedItemsCount := filtered.Length
+
+        if (this.suggestedItemsCount > 0) {
+            choiceCtrl.Choose(1)
+        }
+    }
+
+    HandleInputEnd(ih) {
+        if (!AutoCompletionBox.IsUiOn) {
+            return  ; Already destroyed, don't proceed
+        }
+        
+        ; Check if the end was triggered by an accept key
+        for acceptKey in this.acceptKeys {
+            if (ih.EndKey = acceptKey) {
+                this.AcceptSelection()
+                return
+            }
+        }
+        
+        ; If we get here, it wasn't an accept key, so cancel
+        this.CancelAutocomplete()
+    }
+
+    AcceptSelection(*) {
+        if (!AutoCompletionBox.IsUiOn) {
+            return
+        }
+        
+        choiceCtrl := this.SuggestionUI["Choice"]
+        this.InsertSelection(choiceCtrl)
+        this.CancelAutocomplete() ; weird naming choice I know
+    }
+
+    CancelAutocomplete() {
+        this.EndInputHook()
+        this.EndAutocomplete()
+    }
+
+    EndInputHook() {
+        if (this.iHook) {
+            this.iHook.Stop()
+            this.iHook := ""
+        }
+    }
+
+    EndAutocomplete() {
+        if (AutoCompletionBox.IsUiOn) {
+            this.SuggestionUI.Destroy()
+            this.buffer := ""
+            AutoCompletionBox.IsUIOn := false
+        }
+    }
+
+    InsertSelection(ctrl, *) {
+        choice := ctrl.Text
+        if (choice != "" && choice != "<no match>") {
+            this.controller.DeleteLine(false)
+            SendText "/" choice " "
+        }
+    }
 }
 
 class App {
     static DEFAULT_CONFIG_FILE := "blueprintAppConfig.txt"
     static IsUiOn := false
 
-    static backgroundColor := "ccccccc"
-    static textColor := "f9f9f9"
-    static fontSettings := "s10 c000000"
-    static prefferedFont := "Segoe UI"
-    static altFontSettings := "s14 c000000"
-
-
     __New() {
         this.bindings := Map(
             "toggleSelector", "!s",
-            "runCommand", "!a"
+            "runCommand", "!a",
+            "commandStart", "/"
         )
+
+
 
         this.InitialUiSetup()
         this.InitialWarehouseSetup()
         this.ReadConfigFile()
         this.SetBinding()
-
+        this.AutoCompletionBoxSetup()
         this.SelectorUiSetup()
     }
 
+    AutoCompletionBoxSetup() {
+        this.autoComplete := AutoCompletionBox(this)
+    }
+
     InitialUiSetup() {
+        global backgroundColor, prefferedFont, fontSettings
         this.SelectorUI := Gui("+AlwaysOnTop -Caption +ToolWindow +Border")
-        this.SelectorUI.BackColor := App.backgroundColor
-        this.SelectorUI.SetFont(App.fontSettings, App.prefferedFont)
+        this.SelectorUI.BackColor := backgroundColor
+        this.SelectorUI.SetFont(fontSettings, prefferedFont)
         this.SelectorUI.MarginX := 0
         this.SelectorUI.MarginY := 0
     }
@@ -467,6 +671,7 @@ class App {
     SetBinding() {
         Hotkey(this.bindings["toggleSelector"], ObjBindMethod(this, "ToggleUI"))
         hotkey(this.bindings["runCommand"], ObjBindMethod(this, "RunCommand"))
+        Hotkey("~" this.bindings["commandStart"], ObjBindMethod(this, "InputCommandStartCharacter"))
     }
 
     ApplyConfig(configurableMap, key, val) {
@@ -553,8 +758,10 @@ class App {
         }
     }
 
-    DeleteLine() {
-        Send "{Home}"
+    DeleteLine(full := true) {
+        if (full) {
+            Send "{Home}"
+        }
         Send "{Home}"             ; Go to beginning of line
         Send "+{End}"    
         Send "{Del}"
@@ -596,6 +803,27 @@ class App {
         } catch Error as e {
             MsgBox("Error writing configuration: " e.Message)
         }
+    }
+
+    GetBluePrintNames() {
+        return this.warehouse.GetBluePrintNames()
+    }
+
+    InputCommandStartCharacter(*) {
+        SetTimer(() => this.CheckCommandStart(), -50)  ; Call after 50ms
+    }
+
+    CheckCommandStart() {
+        line := this.GetLineText()
+        Send "{Right}" 
+        raw := Trim(line)
+        if (line = this.bindings["commandStart"] && this.warehouse.IsSetLoaded()) {
+            this.StartAutoComplete()
+        }
+    }
+
+    StartAutoComplete() {
+        this.autoComplete.StartAutoComplete()
     }
 }
 
