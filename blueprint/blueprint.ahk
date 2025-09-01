@@ -623,8 +623,6 @@ class App {
             "commandStart", "/"
         )
 
-
-
         this.InitialUiSetup()
         this.InitialWarehouseSetup()
         this.ReadConfigFile()
@@ -639,26 +637,123 @@ class App {
 
     InitialUiSetup() {
         global backgroundColor, prefferedFont, fontSettings
-        this.SelectorUI := Gui("+AlwaysOnTop -Caption +ToolWindow +Border")
+        this.SelectorUI := Gui("-Caption +ToolWindow +Border")
         this.SelectorUI.BackColor := backgroundColor
         this.SelectorUI.SetFont(fontSettings, prefferedFont)
-        this.SelectorUI.MarginX := 0
-        this.SelectorUI.MarginY := 0
+        this.SelectorUI.MarginX := 12
+        this.SelectorUI.MarginY := 12
     }
 
     SelectorUiSetup() {
         try {
-            this.SelectorUI.Add("DropDownList", "vColorChoice", this.warehouse.GetBluePrintSetNames())
-            this.SelectorUI["ColorChoice"].OnEvent("Change", ObjBindMethod(this, "OnBlueprintSetChange"))
-        } catch Error as e{
+            this.SelectorUI.AddText(, "Set:     ")
+            this.SelectorUI.Add("DropDownList", "x+10 vSetChoice w650", this.warehouse.GetBluePrintSetNames())
+            this.SelectorUI["SetChoice"].OnEvent("Change", ObjBindMethod(this, "OnBlueprintSetChange"))
+            this.SearchUiSetup()
+            this.ListUiSetup()
+            
+            ; Select first set by default
+            setNames := this.warehouse.GetBluePrintSetNames()
+            if (setNames.Length > 0) {
+                this.SelectorUI["SetChoice"].Choose(1)
+                this.warehouse.SwitchBlueprintSet(setNames[1])
+                this.RefreshBlueprintList()
+            }
+        } catch Error as e {
             MsgBox(e.Message)
         }
+    }
+
+    SearchUiSetup() {
+        try {
+            this.SelectorUI.AddText("xm y+10", "Search: ")
+            this.SelectorUI.AddEdit("x+5 vSearchBar r1 w650 h24", "")
+
+            OnSearch := ObjBindMethod(this, "SearchTemplate")
+            this.SelectorUI["SearchBar"].OnEvent("Change", OnSearch)
+        } catch Error as e {
+            MsgBox(e.Message)
+        }
+    }
+
+    ListUiSetup() {
+        try {
+            ; Create ListView with columns for commands, parameters, and templates
+            this.SelectorUI.AddText("xm y+10", "Available Blueprints:")
+            this.SelectorUI.Add("ListView", "xm y+5 r10 w704 vBlueprintList Grid", ["Command", "Parameters"])
+            
+            ; Set column widths
+            LV := this.SelectorUI["BlueprintList"]
+            LV.ModifyCol(1, 150)  ; Command column
+            LV.ModifyCol(2, 550)  ; Parameters column
+            ; Enable basic tooltips with +LV0x4000
+            LV.Opt("+LV0x4000")
+            
+
+            ; Add double-click handler to insert the selected blueprint
+            LV.OnEvent("DoubleClick", ObjBindMethod(this, "InsertSelectedBlueprint"))
+
+            ; Create buttons under the list
+            this.SelectorUI.AddButton("xm y+10 w100", "Insert").OnEvent("Click", ObjBindMethod(this, "InsertSelectedBlueprint"))
+        } catch Error as e {
+            MsgBox(e.Message)
+        }
+    }
+
+    RefreshBlueprintList() {
+        LV := this.SelectorUI["BlueprintList"]
+        LV.Delete()  ; Clear existing items
+        
+        ; Get blueprints from warehouse
+        names := this.warehouse.GetBluePrintNames()
+        filter := this.SelectorUI["SearchBar"].Value
+        
+        for name in names {
+            ; Filter by search term if provided
+            if (filter && !InStr(name, filter))
+                continue
+                
+            bp := this.warehouse.blueprints[name]
+            
+            ; Format parameters
+            paramStr := ""
+            for i, param in bp.params {
+                if (i > 1)
+                    paramStr .= ", "
+                defaultVal := bp.defaults.Has(param) ? bp.defaults[param] : ""
+                paramStr .= param . ":" . defaultVal
+            }
+            
+            LV.Add(, this.bindings["commandStart"] name, paramStr)
+        }
+    }
+
+    InsertSelectedBlueprint(*) {
+        LV := this.SelectorUI["BlueprintList"]
+        selectedRow := LV.GetNext(0)
+        
+        if (selectedRow > 0) {
+            commandName := LV.GetText(selectedRow, 1)
+            commandStr := commandName . " "
+            
+            ; Hide the UI
+            this.ToggleUI()
+            
+            ; Insert the command at cursor position
+            this.WriteText(commandStr)
+        }
+    }
+
+    SearchTemplate(*) {
+        this.RefreshBlueprintList()
     }
 
     OnBlueprintSetChange(ctrl, *) {
         this.warehouse.SwitchBlueprintSet(ctrl.Text)
         ToolTip("current selected set: " ctrl.Text)
         SetTimer () => ToolTip(), -3000
+
+        this.RefreshBlueprintList()
     }
 
     InitialWarehouseSetup() {
@@ -669,10 +764,11 @@ class App {
         if (App.IsUiOn) {
             this.SelectorUI.Hide()
         } else {
-            cursorX := 0
-            cursorY := 0
-            MouseGetPos &cursorX, &cursorY
-            this.SelectorUI.Show("x" cursorX " y" cursorY " AutoSize")
+            ; cursorX := 0
+            ; cursorY := 0
+            ; MouseGetPos &cursorX, &cursorY
+            ; this.SelectorUI.Show("x" cursorX " y" cursorY " AutoSize")
+            this.SelectorUI.Show()
         }
 
         App.IsUiOn := !App.IsUiOn
