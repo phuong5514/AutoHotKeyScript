@@ -827,7 +827,7 @@ class App {
         line := this.GetLineText()
         Send "{Right}" 
         raw := Trim(line)
-        if (line = this.bindings["commandStart"] && this.warehouse.IsSetLoaded()) {
+        if (raw = this.bindings["commandStart"] && this.warehouse.IsSetLoaded()) {
             this.StartAutoComplete()
         }
     }
