@@ -547,7 +547,6 @@ class AutoCompletionBox {
     }
 
     HandleInputEnd(ih) {
-        MsgBox(ih.EndKey)
         if (!AutoCompletionBox.IsUiOn) {
             return  ; Already destroyed, don't proceed
         }
