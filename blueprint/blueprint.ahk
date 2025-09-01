@@ -637,7 +637,7 @@ class App {
 
     InitialUiSetup() {
         global backgroundColor, prefferedFont, fontSettings
-        this.SelectorUI := Gui("+AlwaysOnTop -Caption +ToolWindow +Border")
+        this.SelectorUI := Gui("-Caption +ToolWindow +Border")
         this.SelectorUI.BackColor := backgroundColor
         this.SelectorUI.SetFont(fontSettings, prefferedFont)
         this.SelectorUI.MarginX := 12
@@ -667,11 +667,9 @@ class App {
     SearchUiSetup() {
         try {
             this.SelectorUI.AddText("xm y+10", "Search: ")
-            this.SelectorUI.AddEdit("x+5 vSearchBar r1 w605 h24", "")
-            searchButton := this.SelectorUI.AddButton("Default w40 x+5 h24 yp", "🔍")
+            this.SelectorUI.AddEdit("x+5 vSearchBar r1 w650 h24", "")
 
             OnSearch := ObjBindMethod(this, "SearchTemplate")
-            searchButton.OnEvent("Click", OnSearch)
             this.SelectorUI["SearchBar"].OnEvent("Change", OnSearch)
         } catch Error as e {
             MsgBox(e.Message)
@@ -682,13 +680,15 @@ class App {
         try {
             ; Create ListView with columns for commands, parameters, and templates
             this.SelectorUI.AddText("xm y+10", "Available Blueprints:")
-            this.SelectorUI.Add("ListView", "xm y+5 r10 w700 vBlueprintList Grid", ["Command", "Parameters", "Template"])
+            this.SelectorUI.Add("ListView", "xm y+5 r10 w704 vBlueprintList Grid", ["Command", "Parameters"])
             
             ; Set column widths
             LV := this.SelectorUI["BlueprintList"]
             LV.ModifyCol(1, 150)  ; Command column
-            LV.ModifyCol(2, 200)  ; Parameters column
-            LV.ModifyCol(3, 350)  ; Template column (preview)
+            LV.ModifyCol(2, 550)  ; Parameters column
+            ; Enable basic tooltips with +LV0x4000
+            LV.Opt("+LV0x4000")
+            
 
             ; Add double-click handler to insert the selected blueprint
             LV.OnEvent("DoubleClick", ObjBindMethod(this, "InsertSelectedBlueprint"))
@@ -724,14 +724,7 @@ class App {
                 paramStr .= param . ":" . defaultVal
             }
             
-            ; Get template preview (first line or truncated)
-            ; templatePreview := bp.template
-            ; if (StrLen(templatePreview) > 50)
-            ;     templatePreview := SubStr(templatePreview, 1, 47) . "..."
-                
-            ; Replace newlines with spaces for display
-            ; templatePreview := StrReplace(templatePreview, "`n", " ")
-            LV.Add(, name, paramStr, bp.template)
+            LV.Add(, this.bindings["commandStart"] name, paramStr)
         }
     }
 
@@ -741,7 +734,7 @@ class App {
         
         if (selectedRow > 0) {
             commandName := LV.GetText(selectedRow, 1)
-            commandStr := "/" . commandName . " "
+            commandStr := commandName . " "
             
             ; Hide the UI
             this.ToggleUI()
@@ -758,7 +751,7 @@ class App {
     OnBlueprintSetChange(ctrl, *) {
         this.warehouse.SwitchBlueprintSet(ctrl.Text)
         ToolTip("current selected set: " ctrl.Text)
-        ; SetTimer () => ToolTip(), -3000
+        SetTimer () => ToolTip(), -3000
 
         this.RefreshBlueprintList()
     }
