@@ -23,7 +23,9 @@ moveLeftKey := "Del"
 moveRightKey := "PgDn"
 alt + F5: toggle keyboard control 
 
-- appShortCut.ahk: a hot key to provide quick access to applications
+- appShortCut.ahk: a hot key to provide quick access to applications and websites, and quickly search the selected text on the current search engine
 add program to the menu via config file
 control:
-ctrl + F7: toggle quick access menu
+alt + F7: toggle quick access menu
+alt + g: quick search
+alt + G: open search engine selector 
