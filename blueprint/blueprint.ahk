@@ -547,6 +547,7 @@ class AutoCompletionBox {
     }
 
     HandleInputEnd(ih) {
+        MsgBox(ih.EndKey)
         if (!AutoCompletionBox.IsUiOn) {
             return  ; Already destroyed, don't proceed
         }
@@ -554,6 +555,7 @@ class AutoCompletionBox {
         ; Check if the end was triggered by an accept key
         for acceptKey in this.acceptKeys {
             if (ih.EndKey = acceptKey) {
+                Send("{BackSpace}") ; negate the keys normal function
                 this.AcceptSelection()
                 return
             }
@@ -595,10 +597,19 @@ class AutoCompletionBox {
 
     InsertSelection(ctrl, *) {
         choice := ctrl.Text
-        if (choice != "" && choice != "<no match>") {
-            this.controller.DeleteLine(false)
-            SendText "/" choice " "
+        resultStr := choice " "
+        ClipSaved := ClipboardAll()  
+        A_Clipboard := resultStr
+        
+        if (ClipWait(1)) {  ; Wait for clipboard to contain data
+            if (choice != "" && choice != "<no match>") {
+                Send "+^{Left}"
+                Send "^v"
+            }
+            Sleep 500  ; Small delay to ensure paste completes before restoring clipboard
         }
+        
+        A_Clipboard := ClipSaved  ; Restore original clipboard
     }
 }
 
