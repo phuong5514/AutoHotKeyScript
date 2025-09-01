@@ -667,8 +667,8 @@ class App {
     SearchUiSetup() {
         try {
             this.SelectorUI.AddText("xm y+10", "Search: ")
-            this.SelectorUI.AddEdit("x+5 vSearchBar r1 w605", "")
-            searchButton := this.SelectorUI.AddButton("Default w40 x+5", "🔍")
+            this.SelectorUI.AddEdit("x+5 vSearchBar r1 w605 h24", "")
+            searchButton := this.SelectorUI.AddButton("Default w40 x+5 h24 yp", "🔍")
 
             OnSearch := ObjBindMethod(this, "SearchTemplate")
             searchButton.OnEvent("Click", OnSearch)
