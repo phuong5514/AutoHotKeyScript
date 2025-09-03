@@ -65,13 +65,15 @@ class Blueprint {
 
     GetParamLine(input) {
         ; remove the initial /{name} from the input line
-        if (input = "" || !RegExMatch(input, "^/\S+"))
+        if (input = "" || !RegExMatch(input, "^/\S+")) {
             return ""  ; Return empty if input is invalid
+        }
             
         ; Find the first space after the command
         spacePos := InStr(input, A_Space)
-        if (!spacePos)
+        if (!spacePos) {
             return ""  ; No parameters found
+        }
             
         ; Return everything after the first space
         return SubStr(input, spacePos + 1)
@@ -896,7 +898,7 @@ class App {
                 SetTimer () => ToolTip(), -3000
                 return
             } else {
-                result := blueprint.ExpandTemplate(line, prefix)
+                result := blueprint.ExpandTemplate(trimmedLine, prefix)
                 ; write the result
                 this.DeleteLine()     ; Added this. prefix
                 this.WriteText(result) ; Added this. prefix
