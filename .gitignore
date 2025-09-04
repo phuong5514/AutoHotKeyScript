@@ -2,3 +2,4 @@
 test.ahk
 shortcuts
 backups
+*.code-workspace
