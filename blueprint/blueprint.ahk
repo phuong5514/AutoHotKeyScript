@@ -65,13 +65,15 @@ class Blueprint {
 
     GetParamLine(input) {
         ; remove the initial /{name} from the input line
-        if (input = "" || !RegExMatch(input, "^/\S+"))
+        if (input = "" || !RegExMatch(input, "^/\S+")) {
             return ""  ; Return empty if input is invalid
+        }
             
         ; Find the first space after the command
         spacePos := InStr(input, A_Space)
-        if (!spacePos)
+        if (!spacePos) {
             return ""  ; No parameters found
+        }
             
         ; Return everything after the first space
         return SubStr(input, spacePos + 1)
@@ -224,7 +226,17 @@ class BlueprintWarehouse {
             configFile.WriteLine(";")
             configFile.WriteLine("; <command>")
             configFile.WriteLine(";     <name>command-name</name>")
-            configFile.WriteLine(";     <params>param1=default1, param2=default2</params>")
+            configFile.WriteLine(";     <params>")
+            configFile.WriteLine(";         <param>")
+            configFile.WriteLine(";             <pName>")
+            configFile.WriteLine(";                 parameter-name")
+            configFile.WriteLine(";             </pName>")
+            configFile.WriteLine(";             <pDefault>")
+            configFile.WriteLine(";                 parameter-default-value(can be empty)>")
+            configFile.WriteLine(";             </pDefault>")
+            configFile.WriteLine(";         </param>")
+            configFile.WriteLine(";         ...")
+            configFile.WriteLine(";     </params>")
             configFile.WriteLine(";     <template>")
             configFile.WriteLine(";         Your template content here, using {param1}, {param2}, etc.")
             configFile.WriteLine(";         Supports multiline templates as well.")
@@ -233,11 +245,24 @@ class BlueprintWarehouse {
             configFile.WriteLine(";")
             configFile.WriteLine("; Example:")
             configFile.WriteLine("; <command>")
-            configFile.WriteLine(";     <name>for-loop</name>")
-            configFile.WriteLine(";     <params>var=i, start=0, end=10, step=++</params>")
+            configFile.WriteLine(";     <name>function</name>")
+            configFile.WriteLine(";     <params>")
+            configFile.WriteLine(";         <param>")
+            configFile.WriteLine(";             <pName>name</pName>")
+            configFile.WriteLine(";             <pDefault>function_name</pDefault>")
+            configFile.WriteLine(";         </param>")
+            configFile.WriteLine(";         <param>")
+            configFile.WriteLine(";             <pName>params</pName>")
+            configFile.WriteLine(";             <pDefault></pDefault>")
+            configFile.WriteLine(";         </param>")
+            configFile.WriteLine(";         <param>")
+            configFile.WriteLine(";             <pName>return_type</pName>")
+            configFile.WriteLine(";             <pDefault>void</pDefault>")
+            configFile.WriteLine(";         </param>")
+            configFile.WriteLine(";     </params>")
             configFile.WriteLine(";     <template>")
-            configFile.WriteLine(";         for (let {var} = {start}; {var} < {end}; {var}{step}) {")
-            configFile.WriteLine(";             // body")
+            configFile.WriteLine(";         {return_type} {name}({params}) {")
+            configFile.WriteLine(";             // function body")
             configFile.WriteLine(";         }")
             configFile.WriteLine(";     </template>")
             configFile.WriteLine("; </command>")
@@ -252,55 +277,74 @@ class BlueprintWarehouse {
 
     ReadBlueprintSet(setName) {
         try {
-            if !this.blueprintSetConfigFiles.Has(setName)
-                throw Error("Blueprint set not found: " . setName)
-                
-            path := this.blueprintSetConfigFiles[setName]
-            configFile := FileOpen(path, "r")
-            if !configFile {
-                throw Error("Could not open blueprint set file")
-            }
-
-            content := configFile.Read()
-            configFile.Close()
-
-            startPos := 1
-            while (startPos := RegExMatch(content, "<command>([\s\S]*?)</command>", &match, startPos)) {
-                commandBlock := match[1]
-                startPos += match.Len
-
-                name := this.RegexExtract(commandBlock, "<name>([\s\S]*?)</name>")
-                paramsString := this.RegexExtract(commandBlock, "<params>([\s\S]*?)</params>")
-                template := this.RegexExtract(commandBlock, "<template>([\s\S]*?)</template>")
-                processedTemplate := this.ProcessTemplate(template)
-
-                if (!name || !template) {
-                    continue  ; Skip invalid commands
-                }
-
-                defaultValueMap := Map()
-                params := Array()
-                for param in StrSplit(paramsString, ",") {
-                    if !param
-                        continue
-                        
-                    parts := StrSplit(Trim(param), ":")
-                    
-                    if parts.Length >= 2 {
-                        key := Trim(parts[1])
-                        value := Trim(parts[2])
-                        params.Push(key)
-                        defaultValueMap[key] := value
-                    }
-                }
-
-                ; create a new blueprint and add it to blueprints
-                newBlueprint := Blueprint(params, defaultValueMap, processedTemplate)
-                this.blueprints[name] := newBlueprint
-                this.names.Push(name)
-            }
+            ; Validate inputs and open file
+            this.ValidateSetExists(setName)
+            content := this.ReadSetConfigFile(setName)
+            
+            ; Parse each command block
+            this.ParseCommandBlocks(content)
         } catch Error as e {
             this.WriteDefaultBlueprintSet(setName)
+        }
+    }
+
+    ValidateSetExists(setName) {
+        if !this.blueprintSetConfigFiles.Has(setName) {
+            throw Error("Blueprint set not found: " . setName)
+        }
+    }
+
+    ReadSetConfigFile(setName) {
+        path := this.blueprintSetConfigFiles[setName]
+        configFile := FileOpen(path, "r")
+        if !configFile {
+            throw Error("Could not open blueprint set file: " . path)
+        }
+            
+        content := configFile.Read()
+        configFile.Close()
+        return content
+    }
+
+    ParseCommandBlocks(content) {
+        startPos := 1
+        while (startPos := RegExMatch(content, "<command>([\s\S]*?)</command>", &match, startPos)) {
+            commandBlock := match[1]
+            startPos += match.Len
+            this.ProcessCommandBlock(commandBlock)
+        }
+    }
+
+    ProcessCommandBlock(commandBlock) {
+        name := this.RegexExtract(commandBlock, "<name>([\s\S]*?)</name>")
+        template := this.RegexExtract(commandBlock, "<template>([\s\S]*?)</template>")
+        paramsString := this.RegexExtract(commandBlock, "<params>([\s\S]*?)</params>")
+
+        if (!name || !template) {
+            return  ; Skip invalid commands
+        }
+            
+        defaultValueMap := Map()
+        params := Array()
+        this.ParseParams(paramsString, &params, &defaultValueMap)
+
+        ; Create blueprint and store it
+        newBlueprint := Blueprint(params, defaultValueMap, this.ProcessTemplate(template))
+        this.blueprints[name] := newBlueprint
+        this.names.Push(name)
+    }
+
+    ParseParams(paramsString, &params, &defaultValueMap) {
+        paramsStartPos := 1
+        while (paramsStartPos := RegExMatch(paramsString, "<param>([\s\S]*?)</param>", &paramMatch, paramsStartPos)) {
+            paramBlock := paramMatch[1]
+            paramsStartPos += paramMatch.Len
+            
+            key := this.RegexExtract(paramBlock, "<pName>([\s\S]*?)</pName>")
+            val := this.RegexExtract(paramBlock, "<pDefault>([\s\S]*?)</pDefault>")
+            
+            params.Push(key)
+            defaultValueMap[key] := val
         }
     }
 
@@ -554,6 +598,7 @@ class AutoCompletionBox {
         ; Check if the end was triggered by an accept key
         for acceptKey in this.acceptKeys {
             if (ih.EndKey = acceptKey) {
+                Send("{BackSpace}") ; negate the keys normal function
                 this.AcceptSelection()
                 return
             }
@@ -595,10 +640,19 @@ class AutoCompletionBox {
 
     InsertSelection(ctrl, *) {
         choice := ctrl.Text
-        if (choice != "" && choice != "<no match>") {
-            this.controller.DeleteLine(false)
-            SendText "/" choice " "
+        resultStr := choice " "
+        ClipSaved := ClipboardAll()  
+        A_Clipboard := resultStr
+        
+        if (ClipWait(1)) {  ; Wait for clipboard to contain data
+            if (choice != "" && choice != "<no match>") {
+                Send "+^{Left}"
+                Send "^v"
+            }
+            Sleep 500  ; Small delay to ensure paste completes before restoring clipboard
         }
+        
+        A_Clipboard := ClipSaved  ; Restore original clipboard
     }
 }
 
@@ -612,8 +666,6 @@ class App {
             "runCommand", "!a",
             "commandStart", "/"
         )
-
-
 
         this.InitialUiSetup()
         this.InitialWarehouseSetup()
@@ -629,26 +681,123 @@ class App {
 
     InitialUiSetup() {
         global backgroundColor, prefferedFont, fontSettings
-        this.SelectorUI := Gui("+AlwaysOnTop -Caption +ToolWindow +Border")
+        this.SelectorUI := Gui("-Caption +ToolWindow +Border")
         this.SelectorUI.BackColor := backgroundColor
         this.SelectorUI.SetFont(fontSettings, prefferedFont)
-        this.SelectorUI.MarginX := 0
-        this.SelectorUI.MarginY := 0
+        this.SelectorUI.MarginX := 12
+        this.SelectorUI.MarginY := 12
     }
 
     SelectorUiSetup() {
         try {
-            this.SelectorUI.Add("DropDownList", "vColorChoice", this.warehouse.GetBluePrintSetNames())
-            this.SelectorUI["ColorChoice"].OnEvent("Change", ObjBindMethod(this, "OnBlueprintSetChange"))
-        } catch Error as e{
+            this.SelectorUI.AddText(, "Set:     ")
+            this.SelectorUI.Add("DropDownList", "x+10 vSetChoice w650", this.warehouse.GetBluePrintSetNames())
+            this.SelectorUI["SetChoice"].OnEvent("Change", ObjBindMethod(this, "OnBlueprintSetChange"))
+            this.SearchUiSetup()
+            this.ListUiSetup()
+            
+            ; Select first set by default
+            setNames := this.warehouse.GetBluePrintSetNames()
+            if (setNames.Length > 0) {
+                this.SelectorUI["SetChoice"].Choose(1)
+                this.warehouse.SwitchBlueprintSet(setNames[1])
+                this.RefreshBlueprintList()
+            }
+        } catch Error as e {
             MsgBox(e.Message)
         }
+    }
+
+    SearchUiSetup() {
+        try {
+            this.SelectorUI.AddText("xm y+10", "Search: ")
+            this.SelectorUI.AddEdit("x+5 vSearchBar r1 w650 h24", "")
+
+            OnSearch := ObjBindMethod(this, "SearchTemplate")
+            this.SelectorUI["SearchBar"].OnEvent("Change", OnSearch)
+        } catch Error as e {
+            MsgBox(e.Message)
+        }
+    }
+
+    ListUiSetup() {
+        try {
+            ; Create ListView with columns for commands, parameters, and templates
+            this.SelectorUI.AddText("xm y+10", "Available Blueprints:")
+            this.SelectorUI.Add("ListView", "xm y+5 r10 w704 vBlueprintList Grid", ["Command", "Parameters"])
+            
+            ; Set column widths
+            LV := this.SelectorUI["BlueprintList"]
+            LV.ModifyCol(1, 150)  ; Command column
+            LV.ModifyCol(2, 550)  ; Parameters column
+            ; Enable basic tooltips with +LV0x4000
+            LV.Opt("+LV0x4000")
+            
+
+            ; Add double-click handler to insert the selected blueprint
+            LV.OnEvent("DoubleClick", ObjBindMethod(this, "InsertSelectedBlueprint"))
+
+            ; Create buttons under the list
+            this.SelectorUI.AddButton("xm y+10 w100", "Insert").OnEvent("Click", ObjBindMethod(this, "InsertSelectedBlueprint"))
+        } catch Error as e {
+            MsgBox(e.Message)
+        }
+    }
+
+    RefreshBlueprintList() {
+        LV := this.SelectorUI["BlueprintList"]
+        LV.Delete()  ; Clear existing items
+        
+        ; Get blueprints from warehouse
+        names := this.warehouse.GetBluePrintNames()
+        filter := this.SelectorUI["SearchBar"].Value
+        
+        for name in names {
+            ; Filter by search term if provided
+            if (filter && !InStr(name, filter))
+                continue
+                
+            bp := this.warehouse.blueprints[name]
+            
+            ; Format parameters
+            paramStr := ""
+            for i, param in bp.params {
+                if (i > 1)
+                    paramStr .= ", "
+                defaultVal := bp.defaults.Has(param) ? bp.defaults[param] : ""
+                paramStr .= param . ":" . defaultVal
+            }
+            
+            LV.Add(, this.bindings["commandStart"] name, paramStr)
+        }
+    }
+
+    InsertSelectedBlueprint(*) {
+        LV := this.SelectorUI["BlueprintList"]
+        selectedRow := LV.GetNext(0)
+        
+        if (selectedRow > 0) {
+            commandName := LV.GetText(selectedRow, 1)
+            commandStr := commandName . " "
+            
+            ; Hide the UI
+            this.ToggleUI()
+            
+            ; Insert the command at cursor position
+            this.WriteText(commandStr)
+        }
+    }
+
+    SearchTemplate(*) {
+        this.RefreshBlueprintList()
     }
 
     OnBlueprintSetChange(ctrl, *) {
         this.warehouse.SwitchBlueprintSet(ctrl.Text)
         ToolTip("current selected set: " ctrl.Text)
         SetTimer () => ToolTip(), -3000
+
+        this.RefreshBlueprintList()
     }
 
     InitialWarehouseSetup() {
@@ -659,10 +808,11 @@ class App {
         if (App.IsUiOn) {
             this.SelectorUI.Hide()
         } else {
-            cursorX := 0
-            cursorY := 0
-            MouseGetPos &cursorX, &cursorY
-            this.SelectorUI.Show("x" cursorX " y" cursorY " AutoSize")
+            ; cursorX := 0
+            ; cursorY := 0
+            ; MouseGetPos &cursorX, &cursorY
+            ; this.SelectorUI.Show("x" cursorX " y" cursorY " AutoSize")
+            this.SelectorUI.Show()
         }
 
         App.IsUiOn := !App.IsUiOn
@@ -748,7 +898,7 @@ class App {
                 SetTimer () => ToolTip(), -3000
                 return
             } else {
-                result := blueprint.ExpandTemplate(line, prefix)
+                result := blueprint.ExpandTemplate(trimmedLine, prefix)
                 ; write the result
                 this.DeleteLine()     ; Added this. prefix
                 this.WriteText(result) ; Added this. prefix
@@ -817,7 +967,7 @@ class App {
         line := this.GetLineText()
         Send "{Right}" 
         raw := Trim(line)
-        if (line = this.bindings["commandStart"] && this.warehouse.IsSetLoaded()) {
+        if (raw = this.bindings["commandStart"] && this.warehouse.IsSetLoaded()) {
             this.StartAutoComplete()
         }
     }
