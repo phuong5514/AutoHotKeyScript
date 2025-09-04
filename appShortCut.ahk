@@ -160,7 +160,13 @@ CreateConfigFile() {
 
 Execute(path) {
     try {
-        Run(path)
+        ; check if path is a folder and not an executable file
+        if (DirExist(path)) {
+            CreateSubFolderMenu(path)
+        } else {
+            Run(path)
+        }
+
     } catch Error as e{
         MsgBox(e.Message)   
     }
@@ -309,6 +315,30 @@ class ProcessTrackerTimer {
             }
         }
     }
+}
+
+
+CreateSubFolderMenu(path) {
+    SubFolderUI := Gui()
+    LV := SubFolderUI.Add("ListView", "r20 w400", ["Name"])
+    LV.path := path
+
+    ; Notify the script whenever the user double clicks a row:
+    LV.OnEvent("DoubleClick", SubFolderMenuDoubleClick)
+
+    ; Gather a list of file names from a folder and put them into the ListView:
+    Loop Files, path "\*"
+        LV.Add(, A_LoopFileName)
+
+    ; Display the window:
+    SubFolderUI.Show()
+}
+
+SubFolderMenuDoubleClick(LV, RowNumber) {
+    RowText := LV.GetText(RowNumber) 
+    FullPath := LV.path "\" RowText
+
+    Execute(FullPath)
 }
 
 ; Flow
