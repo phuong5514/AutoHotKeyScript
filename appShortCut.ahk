@@ -193,13 +193,14 @@ ShowMenuUI() {
             radialButtonControls.Push(btn)
             
             ; Add running counter for non-web apps
-            if (!IsStringAWebLink(path) && !isSpecialApp) {
-                counterX := btnX + 57
-                counterY := btnY - 15
-                counter := shortcutList.AddText("x" counterX " y" counterY " w16 h16 Center cYellow Background" sliceColor, "0")
-                counter.SetFont("s7 cYellow Bold", prefferedFont)
-                appRunningCounters[app_name] := counter
-            }
+            ; ////////////////// Currently bugged ///////////////////
+            ; if (!IsStringAWebLink(path) && !isSpecialApp) {
+            ;     counterX := btnX + 57
+            ;     counterY := btnY - 15
+            ;     counter := shortcutList.AddText("x" counterX " y" counterY " w16 h16 Center cYellow Background" sliceColor, "0")
+            ;     counter.SetFont("s7 cYellow Bold", prefferedFont)
+            ;     appRunningCounters[app_name] := counter
+            ; }
             
             ; Add close button for non-special apps
             if (!IsStringAWebLink(path) && !isSpecialApp) {
