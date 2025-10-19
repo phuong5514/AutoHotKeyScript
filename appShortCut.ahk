@@ -8,28 +8,38 @@ global searchTypes := Map(
 )
 global currentSearchType := "google"
 
-backgroundColor := "ccccccc"
+backgroundColor := "363636"
 textColor := "f9f9f9"
 fontSettings := "s10 c000000"
 prefferedFont := "Segoe UI"
 altFontSettings := "s14 c000000"
 
-; Menu UI
+; Radial Menu UI Configuration
 global menuUiOn := false
-shortcutList := Gui("+AlwaysOnTop -Caption +ToolWindow +Border")
+global baseMenuRadius := 150  ; Base radius for small number of items
+global centerRadius := 80
+global minMenuRadius := 150
+global maxMenuRadius := 600
+
+; Create main radial menu GUI
+shortcutList := Gui("+AlwaysOnTop -Caption +ToolWindow")
 shortcutList.BackColor := backgroundColor
+WinSetTransColor(backgroundColor, shortcutList)
 shortcutList.SetFont(fontSettings, prefferedFont)
 shortcutList.MarginX := 0
 shortcutList.MarginY := 0
 
 global appRunningCounters := Map()
 global closeAllInstanceButtons := Map()
+global radialSliceControls := []
+global radialButtonControls := []
 global processTracker := ProcessTrackerTimer(apps, appRunningCounters)
 
 ; Search Settings UI
 global searchSettingOn := false
 engineSelector := Gui("+AlwaysOnTop -Caption +ToolWindow +Border")
 engineSelector.BackColor := backgroundColor
+WinSetTransColor(backgroundColor, engineSelector)
 engineSelector.SetFont(fontSettings, prefferedFont)
 engineSelector.MarginX := 0
 engineSelector.MarginY := 0
@@ -59,15 +69,252 @@ ToggleMenuUI(*) {
 }
 
 ShowMenuUI() {
-    global menuUiOn, Timer
+    global menuUiOn, baseMenuRadius, centerRadius, minMenuRadius, maxMenuRadius, apps, radialSliceControls, radialButtonControls, appRunningCounters
     menuUiOn := true
-    cursorX := 0
-    cursorY := 0
-    MouseGetPos &cursorX, &cursorY
-    shortcutList.Show("x" cursorX " y" cursorY " AutoSize")
+    
+    ; Get app count
+    appCount := apps.Count
+    
+    ; Calculate ring distribution based on item count
+    ; Strategy: Keep 6-8 items per ring for optimal spacing
+    itemsPerRing := 8
+    
+    if (appCount = 0) {
+        menuRadius := minMenuRadius
+        numRings := 0
+    } else if (appCount <= itemsPerRing) {
+        ; Single ring for small lists
+        numRings := 1
+        menuRadius := 180
+    } else if (appCount <= itemsPerRing * 2) {
+        ; Two rings
+        numRings := 2
+        menuRadius := 250
+    } else if (appCount <= itemsPerRing * 3) {
+        ; Three rings
+        numRings := 3
+        menuRadius := 300
+    } else {
+        ; Four or more rings (calculate dynamically)
+        numRings := Ceil(appCount / itemsPerRing)
+        menuRadius := Min(200 + numRings * 50, maxMenuRadius)
+    }
+    
+    menuSize := menuRadius * 2 + 50
+    
+    ; Center on screen
+    centerX := (A_ScreenWidth) // 2 - menuSize
+    centerY := (A_ScreenHeight) // 2 - menuSize
+    
+    ; Clear previous controls
+    ClearRadialMenu()
+    
+    if (appCount = 0) {
+        shortcutList.AddText("x" (menuSize//2 - 60) " y" (menuSize//2 - 15) " w120 h30 Center cWhite", "No apps configured")
+        shortcutList.Show("x" centerX " y" centerY " w" menuSize " h" menuSize)
+        return
+    }
+    
+    centerOffsetX := menuSize // 2
+    centerOffsetY := menuSize // 2
+    
+    ; Color palette for slices
+    colors := ["3a3a3a", "4a4a4a", "353535", "404040", "3d3d3d", "424242", "383838", "454545"]
+    
+    ; Distribute items across rings
+    ; Calculate items per ring to distribute evenly
+    itemsDistribution := []
+    remainingItems := appCount
+    
+    if (numRings = 1) {
+        itemsDistribution.Push(appCount)
+    } else {
+        ; Distribute items across rings (inner rings get fewer items)
+        Loop numRings {
+            if (A_Index = numRings) {
+                ; Last ring gets all remaining items
+                itemsDistribution.Push(remainingItems)
+            } else {
+                ; Inner rings get proportionally fewer items
+                itemsInThisRing := Max(6, Floor(itemsPerRing * (A_Index / numRings)))
+                itemsInThisRing := Min(itemsInThisRing, remainingItems)
+                itemsDistribution.Push(itemsInThisRing)
+                remainingItems -= itemsInThisRing
+            }
+        }
+    }
+    
+    ; Draw items in rings
+    itemIndex := 0
+    Loop numRings {
+        itemsInRing := itemsDistribution[A_Index]
+        anglePerSlice := 360.0 / itemsInRing
+        
+        ; Calculate radius for this ring (inner rings are closer to center)
+        ringRadius := (menuRadius - centerRadius) * (A_Index / numRings) + centerRadius * 0.5
+        
+        Loop itemsInRing {
+            itemIndex++
+            if (itemIndex > appCount)
+                break
+            
+            ; Get app info
+            appArray := []
+            for app_name, path in apps {
+                appArray.Push({name: app_name, path: path})
+            }
+            appInfo := appArray[itemIndex]
+            app_name := appInfo.name
+            path := appInfo.path
+            
+            ; Calculate angle for this item
+            startAngle := (A_Index - 1) * anglePerSlice - 90  ; Start from top
+            midAngle := startAngle + (anglePerSlice / 2)
+            
+            ; Get color for this item
+            colorIndex := Mod(itemIndex - 1, colors.Length) + 1
+            sliceColor := colors[colorIndex]
+            
+            ; Calculate button position
+            angleRad := midAngle * 3.14159265359 / 180
+            btnX := centerOffsetX + Round(ringRadius * Cos(angleRad)) - 45
+            btnY := centerOffsetY + Round(ringRadius * Sin(angleRad)) - 20
+            
+            ; Clean up display name
+            isSpecialApp := SubStr(app_name, -1) = "*"
+            displayName := isSpecialApp ? SubStr(app_name, 1, StrLen(app_name) - 1) : app_name
+            
+            ; Create button
+            btn := shortcutList.AddButton("x" btnX " y" btnY " w90 h40 cWhite Background" sliceColor, displayName)
+            btn.SetFont("s9 cWhite Bold", prefferedFont)
+            btn.path_to_program := path
+            btn.program_name := app_name
+            btn.OnEvent("Click", (ctrl, *) => Execute(ctrl.path_to_program))
+            radialButtonControls.Push(btn)
+            
+            ; Add running counter for non-web apps
+            if (!IsStringAWebLink(path) && !isSpecialApp) {
+                counterX := btnX + 57
+                counterY := btnY - 15
+                counter := shortcutList.AddText("x" counterX " y" counterY " w16 h16 Center cYellow Background" sliceColor, "0")
+                counter.SetFont("s7 cYellow Bold", prefferedFont)
+                appRunningCounters[app_name] := counter
+            }
+            
+            ; Add close button for non-special apps
+            if (!IsStringAWebLink(path) && !isSpecialApp) {
+                closeX := btnX + 73
+                closeY := btnY - 15
+                closeBtn := shortcutList.AddButton("x" closeX " y" closeY " w16 h16 cRed", "×")
+                closeBtn.SetFont("s8 cRed Bold", prefferedFont)
+                closeBtn.program_name := app_name
+                closeBtn.OnEvent("Click", (ctrl, *) => KillAllInstance(ctrl.program_name))
+                radialButtonControls.Push(closeBtn)
+            }
+        }
+    }
+    
+    ; Draw center circle
+    centerX_circle := centerOffsetX - centerRadius//2
+    centerY_circle := centerOffsetY - centerRadius//2
+    ; centerCircle := shortcutList.AddProgress("x" centerX_circle " y" centerY_circle " w" centerRadius " h" centerRadius " Backgroundcccccc -Smooth", 100)
+    ; radialSliceControls.Push(centerCircle)
+    
+    ; Center control
+    editButton := shortcutList.AddButton("x" (centerOffsetX - 45) " y" (centerOffsetY - 40) " w90 h40 cWhite Background Center Background" sliceColor, "✒️")
+    editButton.SetFont("s9 cWhite Bold", prefferedFont)
+    global configFileName
+    editButton.OnEvent("Click", (ctrl, *) => Execute(configFileName))
+    radialButtonControls.Push(editButton)
 
+    refreshButton := shortcutList.AddButton("x" (centerOffsetX - 45) " y" (centerOffsetY) " w90 h40 cWhite Background Center Background" sliceColor, "🔄️")
+    refreshButton.SetFont("s9 cWhite Bold", prefferedFont)
+    refreshButton.OnEvent("Click", (ctrl, *) => Reconfigure())
+    radialButtonControls.Push(refreshButton)
+    
+    ; centerText := shortcutList.AddText("x" (centerOffsetX - 35) " y" (centerOffsetY - 12) " w70 h24 Center c333333 BackgroundTrans", "MENU")
+    ; centerText.SetFont("s11 c333333 Bold", prefferedFont)
+    
+    shortcutList.Show("x" centerX " y" centerY " w" menuSize " h" menuSize)
     processTracker.Start()
 }
+
+RefreshRadialMenu() {
+    global menuUiOn
+    
+    ; Stop the process tracker
+    processTracker.Stop()
+    
+    ; Clear and hide the current menu
+    ClearRadialMenu()
+    shortcutList.Hide()
+    
+    ; Rebuild the search engine selector with new config
+    RebuildSearchEngineSelector()
+    
+    ; Show the menu again with new configuration
+    menuUiOn := false  ; Reset state
+    ShowMenuUI()
+}
+
+Reconfigure() {
+    ReadConfiguration()
+    RefreshRadialMenu()
+}
+
+RebuildSearchEngineSelector() {
+    global searchTypes, engineSelector
+    
+    ; Clear existing dropdown
+    try {
+        engineSelector.Destroy()
+    }
+    
+    ; Recreate the engine selector GUI
+    engineSelector := Gui("+AlwaysOnTop -Caption +ToolWindow +Border")
+    engineSelector.BackColor := backgroundColor
+    WinSetTransColor(backgroundColor, engineSelector)
+    engineSelector.SetFont(fontSettings, prefferedFont)
+    engineSelector.MarginX := 0
+    engineSelector.MarginY := 0
+    
+    ; Build search engine options from updated config
+    searchEngineOptionsString := ""
+    for key, val in searchTypes
+        searchEngineOptionsString .= key "|"
+    searchEngineOptions := StrSplit(searchEngineOptionsString, "|")
+    searchEngineOptions.Pop()
+    
+    engineSelector.Add("DropDownList", "vColorChoice Choose1", searchEngineOptions)
+    engineSelector["ColorChoice"].OnEvent("Change", OnSearchEngineChange)
+}
+
+ClearRadialMenu() {
+    global radialSliceControls, radialButtonControls, appRunningCounters, shortcutList
+    
+    ; Simply destroy all controls by recreating the GUI
+    ; This is the cleanest way in AutoHotkey v2
+    try {
+        shortcutList.Destroy()
+    }
+    
+    ; Recreate the shortcutList GUI
+    shortcutList := Gui("+AlwaysOnTop -Caption +ToolWindow")
+    shortcutList.BackColor := backgroundColor
+    WinSetTransColor(backgroundColor, shortcutList)
+    shortcutList.SetFont(fontSettings, prefferedFont)
+    shortcutList.MarginX := 0
+    shortcutList.MarginY := 0
+    shortcutList.OnEvent("Escape", (*) => HideMenuUI())
+    
+    ; Clear the arrays
+    radialSliceControls := []
+    radialButtonControls := []
+    
+    ; Clear running counters map
+    appRunningCounters := Map()
+}
+
 
 HideMenuUI() {
     global menuUiOn
@@ -96,6 +343,8 @@ IsSwitchMap(line) {
 global configurableMaps := [apps , bindings, searchTypes]
 ReadConfiguration() {
     global configFileName, apps, configurableMaps
+    ClearConfiguration()
+
     currentMapIndex := 1
     try {
         configFile := FileOpen(configFileName, "r")
@@ -131,6 +380,23 @@ ReadConfiguration() {
         ; MsgBox("Error reading configuration: " e.Message)
         CreateConfigFile()
     }
+}
+
+ClearConfiguration() {
+    global apps, bindings, searchTypes
+    
+    ; Clear all configuration maps
+    apps.Clear()
+    
+    ; Reset bindings to defaults (keep the core hotkeys)
+    bindings.Clear()
+    bindings["toggleShortcutList"] := "!F7"
+    bindings["quickSearch"] := "!g"
+    bindings["toggleSearchEngineSelector"] := "!G"
+    
+    ; Reset search types to default
+    searchTypes.Clear()
+    searchTypes["google"] := "https://www.google.com/search?q="
 }
 
 CreateConfigFile() {
@@ -302,9 +568,11 @@ class ProcessTrackerTimer {
     }
 
     UpdateCounter(app_name, path) {
-        instanceRunningCounter := this.counters[app_name]
-        runningProcessCount := CountProcessInstance(path)
-        instanceRunningCounter.Text := runningProcessCount > 99 ? "99+" : runningProcessCount
+        if (this.counters.Has(app_name)) {
+            instanceRunningCounter := this.counters[app_name]
+            runningProcessCount := CountProcessInstance(path)
+            instanceRunningCounter.Text := runningProcessCount > 99 ? "99+" : runningProcessCount
+        }
     }
 
     ; In this example, the timer calls this method:
@@ -346,40 +614,8 @@ SubFolderMenuDoubleClick(LV, RowNumber) {
 ; Read Configuration
 ReadConfiguration()
 
-
-
-; Register UI
-; menu
-for app_name, path in apps {
-    isWebLink := IsStringAWebLink(path)
-    isSpecialApp := SubStr(app_name, -1) = "*"
-    displayName := isSpecialApp ? SubStr(app_name, 1, StrLen(app_name) - 1) : app_name
-    
-    ; Create the main button with appropriate width
-    button := shortcutList.AddButton(
-        "xs " (isWebLink ? "w200" : (isSpecialApp ? "w166" : "w142")) " h30 +BackgroundTrans +0x0100", 
-        "    " displayName
-    )
-    button.SetFont(fontSettings, prefferedFont)
-    button.path_to_program := path    
-    button.program_name := app_name
-    button.OnEvent("Click", (ctrl, *) => Execute(ctrl.path_to_program))
-    
-    ; For non-web applications
-    if (!isWebLink) {
-        ; Add running instance counter
-        instanceRunningCount := shortcutList.AddText("w34 h30 x+0 +Center", "0")
-        instanceRunningCount.SetFont(altFontSettings, prefferedFont)
-        appRunningCounters[app_name] := instanceRunningCount
-        
-        ; Add close button only for regular apps
-        if (!isSpecialApp) {
-            closeAllButton := shortcutList.AddButton("w24 h30 x+0 +BackgroundTrans", "X")
-            closeAllButton.program_name := app_name
-            closeAllButton.OnEvent("Click", (ctrl, *) => KillAllInstance(ctrl.program_name))
-        }
-    }
-}
+; Register UI - Radial menu is built dynamically in ShowMenuUI()
+; No pre-building needed, everything is created on-demand
 
 searchEngineOptionsString := ""
 for key, val in searchTypes
